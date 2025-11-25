@@ -1,0 +1,235 @@
+# Kerakli kutubxonalarni o'rnating: pip install flask
+from flask import Flask, request, jsonify, render_template_string
+from collections import deque
+import json
+import time
+import binascii
+from decimal import Decimal
+
+# --- Dispenser protokoli uchun yordamchi funksiyalar ---
+
+def calculate_checksum(data: bytes) -> int:
+    """CRC-16/MODBUS checksum'ini hisoblaydi."""
+    crc = 0xFFFF
+    for byte in data:
+        crc ^= byte
+        for _ in range(8):
+            if crc & 0x0001:
+                crc = (crc >> 1) ^ 0xA001
+            else:
+                crc = crc >> 1
+    return crc & 0xFFFF
+
+def check_packet_crc(data: bytes) -> dict:
+    """Paketning CRC'sini tekshiradi va natijani lug'at ko'rinishida qaytaradi."""
+    if len(data) < 2:
+        return {"valid": False, "reason": "Packet too short"}
+    
+    payload = data[:-2]
+    expected_crc_bytes = data[-2:]
+    expected_crc = int.from_bytes(expected_crc_bytes, byteorder="little")
+    
+    calculated_crc = calculate_checksum(payload)
+    is_valid = (expected_crc == calculated_crc)
+    
+    return {
+        "valid": is_valid,
+        "payload_hex": payload.hex().upper(),
+        "expected_crc": f"{expected_crc:04X}",
+        "calculated_crc": f"{calculated_crc:04X}",
+        "reason": "OK" if is_valid else "CRC mismatch"
+    }
+
+def parse_dispenser_packet(packet: bytes) -> dict:
+    """
+    Dispenser paketini batafsil tahlil qiladi va ma'lumotlarni ajratib oladi.
+    Bu funksiya sizning Django loyihangizdagi tahlil mantig'ini takrorlaydi.
+    """
+    analysis = {"description": "Unknown Packet", "details": {}, "crc": None}
+    
+    # 1. CRC'ni tekshiramiz
+    crc_info = check_packet_crc(packet)
+    analysis["crc"] = crc_info
+    if not crc_info["valid"]:
+        analysis["description"] = "Invalid CRC"
+        return analysis
+
+    payload = packet[:-2]  # CRC'siz qismi
+    
+    if len(payload) < 2:
+        return analysis
+
+    # 2. Paket turini aniqlaymiz va tahlil qilamiz
+    try:
+        func_code = payload[1]
+        
+        # Holat so'roviga javob (ST - 0x07 buyrug'iga)
+        if func_code == 0x03 and len(payload) >= 15:
+            status_code = payload[10]
+            status_map = {
+                0x00: "IDLE", 0x01: "IDLE", 0x11: "IDLE",
+                0x20: "FINISHED (Nozzle down)", 0x21: "IDLE (Nozzle up)", 0x31: "IDLE (Motor running)",
+                0x40: "PAUSED", 0x41: "PAUSED (Nozzle up)", 0x51: "PAUSED", 0x60: "PAUSED", 0x61: "PAUSED",
+                0x71: "PAUSED", 0x81: "PAUSED", 0x91: "PAUSED",
+                0x80: "FILLING", 0x82: "FILLING", 0x83: "FILLING", 0x93: "FILLING",
+                0xA0: "FILLING", 0xA1: "FILLING", 0xA2: "FILLING", 0xA3: "FILLING",
+                0xB1: "FILLING", 0xB3: "FILLING"
+            }
+            analysis["description"] = f"Status: {status_map.get(status_code, f'Unknown ({status_code:02X})')}"
+            
+            # Hajm va summani o'qiymiz (nostandart tartibda)
+            volume = Decimal(int.from_bytes(payload[11:13], byteorder="big")) / Decimal(100)
+            amount = Decimal((payload[15] << 24) | (payload[16] << 16) | (payload[13] << 8) | payload[14])
+            analysis["details"]["Volume"] = f"{volume:.2f}"
+            analysis["details"]["Amount"] = f"{amount}"
+
+        # Batafsil holat so'roviga javob (STP - 0x05 buyrug'iga)
+        elif func_code == 0x03 and len(payload) >= 11 and payload[2] == 0x0A:
+            analysis["description"] = "Detailed Status Response"
+            pressure = Decimal(int.from_bytes(payload[3:5], byteorder="big"))
+            temperature = Decimal(int.from_bytes(payload[11:13], byteorder="big"))
+            analysis["details"]["Pressure"] = f"{pressure}"
+            analysis["details"]["Temperature"] = f"{temperature}"
+
+        # Sotuvni boshlash buyrug'iga javob (SS - 0x10 buyrug'iga)
+        elif func_code == 0x10 and len(payload) >= 6 and payload[3] == 0x45:
+            analysis["description"] = "Preset Acknowledged (Sale Start)"
+
+        # Narx o'rnatish kabi boshqa buyruqlarga javob
+        elif func_code == 0x06 and len(payload) >= 6:
+            analysis["description"] = "Setting Acknowledged"
+            addr = int.from_bytes(payload[2:4], byteorder="big")
+            value = int.from_bytes(payload[4:6], byteorder="big")
+            analysis["details"]["Register Address"] = f"0x{addr:04X}"
+            analysis["details"]["Value"] = value
+
+        else:
+            analysis["description"] = f"Command/Response (Func Code: {func_code:02X})"
+
+    except Exception as e:
+        analysis["description"] = "Error during parsing"
+        analysis["details"]["Error"] = str(e)
+
+    return analysis
+
+
+# --- Flask ilovasi ---
+
+app = Flask(__name__)
+# Oxirgi 200 ta hodisani xotirada saqlaymiz
+events = deque(maxlen=200)
+
+PAGE = """
+<!doctype html>
+<html>
+<head>
+  <title>Real-time Dispenser Protocol Analyzer</title>
+  <meta http-equiv="refresh" content="1">
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 20px; background-color: #f9f9f9; }
+    h3 { color: #333; }
+    table { border-collapse: collapse; width: 100%; font-size: 13px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+    th, td { border: 1px solid #e0e0e0; padding: 8px; text-align: left; vertical-align: top; }
+    th { background-color: #f2f2f2; }
+    code { font-family: "SF Mono", "Consolas", "Menlo", monospace; background-color: #e9e9e9; padding: 2px 4px; border-radius: 3px; }
+    .crc-ok { color: #28a745; font-weight: bold; }
+    .crc-err { color: #dc3545; font-weight: bold; }
+    .type-read { background-color: #e7f3fe; }
+    .type-write { background-color: #fff4e5; }
+    .details { font-size: 12px; color: #555; margin-top: 4px; }
+    .details b { color: #000; }
+  </style>
+</head>
+<body>
+  <h3>Real-time Dispenser Protocol Analyzer</h3>
+  <table>
+    <thead>
+      <tr><th>Original Timestamp</th><th>R/W</th><th>Packet (HEX)</th><th>Analysis</th><th>CRC</th></tr>
+    </thead>
+    <tbody>
+      {% for e in events %}
+      <tr class="{{ 'type-read' if e.original_type == 1 else 'type-write' }}">
+        <td>{{ e.original_timestamp.split('T')[1].replace('Z','') }}</td>
+        <td><b>{{ 'READ' if e.original_type == 1 else 'WRITE' }}</b></td>
+        <td><code>{{ e.raw_hex }}</code></td>
+        <td>
+          <b>{{ e.analysis.description }}</b>
+          <div class="details">
+            {% for key, value in e.analysis.get('details', {}).items() %}
+              <b>{{ key }}:</b> {{ value }}<br>
+            {% endfor %}
+          </div>
+        </td>
+        {% set crc = e.analysis.get('crc') %}
+        {% if crc %}
+          <td class="crc-{{ 'ok' if crc.valid else 'err' }}">
+            {{ 'OK' if crc.valid else 'FAIL' }}
+          </td>
+        {% else %}
+          <td>N/A</td>
+        {% endif %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</body>
+</html>
+"""
+
+@app.route("/")
+def index():
+    """Bosh sahifani server-side rendering yordamida ko'rsatadi."""
+    return render_template_string(PAGE, events=list(reversed(events)))
+
+@app.route("/ingest", methods=["POST"])
+def ingest():
+    """
+    PortSniffer-Tool'dan kelgan JSON ma'lumotni qabul qilib,
+    ichidagi HEX paketni tahlil qiladi.
+    """
+    try:
+        raw_bytes = request.data
+        if not raw_bytes:
+            return "Empty request", 400
+        
+        # 1. C++ dan kelgan UTF-16LE'ni dekodlaymiz va JSONga o'giramiz
+        try:
+            decoded_string = raw_bytes.decode("utf-16-le")
+            payload = json.loads(decoded_string)
+        except (UnicodeDecodeError, json.JSONDecodeError) as e:
+            return f"Invalid payload: {e}", 400
+            
+        # 2. JSONdan 'data_hex'ni olamiz
+        hex_data = payload.get("data_hex")
+        if not hex_data:
+            return "OK (no hex data in payload)", 200
+
+        # 3. HEX matnni xom baytlarga o'giramiz
+        try:
+            packet_bytes = binascii.unhexlify(hex_data)
+        except binascii.Error:
+            # Xato hex ma'lumotni ham logga yozamiz
+            event = { "raw_hex": hex_data, "analysis": {"description": "Invalid HEX format"} }
+            events.append(event)
+            return "Invalid HEX data", 400
+
+        # 4. Paketni batafsil tahlil qilamiz
+        analysis_result = parse_dispenser_packet(packet_bytes)
+
+        # 5. Tahlil qilingan ma'lumotni saqlaymiz
+        event = {
+            "original_timestamp": payload.get("timestamp", "N/A"),
+            "original_type": payload.get("type"), # 1=READ, 2=WRITE
+            "raw_hex": hex_data,
+            "analysis": analysis_result
+        }
+        events.append(event)
+        
+        return "OK", 200
+    except Exception as e:
+        return f"Server Error: {e}", 500
+
+if __name__ == "__main__":
+    print("Server is running at http://127.0.0.1:8000")
+    print("Use this URL in PortSniffer-Tool: http://127.0.0.1:8000/ingest")
+    app.run(host="0.0.0.0", port=8000, debug=False)

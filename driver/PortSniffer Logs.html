@@ -1,0 +1,1543 @@
+<!DOCTYPE html>
+<!-- saved from url=(0022)http://127.0.0.1:8000/ -->
+<html><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+  
+  <title>PortSniffer Logs</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 16px; }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { border: 1px solid #ddd; padding: 6px; font-size: 12px; }
+    th { background: #f5f5f5; position: sticky; top: 0; }
+    code { font-family: Menlo, Consolas, monospace; }
+    .pre { white-space: pre-wrap; word-break: break-word; }
+    .controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .controls label { font-size: 12px; }
+    .legend { margin: 8px 0 12px; display: flex; gap: 8px; flex-wrap: wrap; }
+    .legend .item { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; border: 1px solid #ddd; padding: 2px 6px; border-radius: 4px; }
+    .legend .swatch { width: 12px; height: 12px; border: 1px solid rgba(0,0,0,0.2); }
+  </style>
+</head>
+<body>
+  <h3>PortSniffer Logs</h3>
+  <div class="controls">
+    <label>Auto-refresh (ms): <input id="interval" type="number" value="1000" min="250" style="width:90px"></label>
+    <label>Port: <input id="flt_port" placeholder="e.g. COM3" style="width:120px"></label>
+    <label>Type:
+      <select id="flt_type">
+        <option value="">Any</option>
+        <option value="1">READ</option>
+        <option value="2">WRITE</option>
+        <option value="4">IOCTL</option>
+      </select>
+    </label>
+    <label>Limit: <input id="flt_limit" type="number" min="1" max="1000" value="200" style="width:80px"></label>
+    <button onclick="start()">Apply</button>
+    <button onclick="reloadNow()">Reload</button>
+  </div>
+  <div id="legend" class="legend"><div class="item"><span class="swatch" style="background-color: rgb(247, 232, 212);"></span><span>COM4</span></div></div>
+  <table id="tbl">
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>port</th>
+        <th>timestamp</th>
+        <th>type</th>
+        <th>length</th>
+        <th>data_hex</th>
+        <th>data_text</th>
+      </tr>
+    </thead>
+    <tbody><tr style="background-color: rgb(247, 232, 212);">
+      <td>1</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:50.742Z</td>
+      <td>2</td>
+      <td>8</td>
+      <td><code>23039C4400076CCF</code></td>
+      <td><code class="pre">#..D..l.</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>2</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:50.614Z</td>
+      <td>2</td>
+      <td>8</td>
+      <td><code>1E039C4400076822</code></td>
+      <td><code class="pre">...D..h"</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>3</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:50.486Z</td>
+      <td>2</td>
+      <td>8</td>
+      <td><code>19039C4400076995</code></td>
+      <td><code class="pre">...D..i.</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>4</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:50.349Z</td>
+      <td>2</td>
+      <td>8</td>
+      <td><code>14039C4400076888</code></td>
+      <td><code class="pre">...D..h.</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>5</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:50.218Z</td>
+      <td>2</td>
+      <td>8</td>
+      <td><code>0F039C4400076B63</code></td>
+      <td><code class="pre">...D..kc</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>6</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:50.093Z</td>
+      <td>2</td>
+      <td>8</td>
+      <td><code>0A039C4400076B36</code></td>
+      <td><code class="pre">
+..D..k6</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>7</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:50.017Z</td>
+      <td>1</td>
+      <td>1</td>
+      <td><code>E8</code></td>
+      <td><code class="pre">.</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>8</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:50.017Z</td>
+      <td>1</td>
+      <td>4</td>
+      <td><code>000000B6</code></td>
+      <td><code class="pre">....</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>9</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:50.016Z</td>
+      <td>1</td>
+      <td>4</td>
+      <td><code>20000000</code></td>
+      <td><code class="pre"> ...</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>10</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:50.015Z</td>
+      <td>1</td>
+      <td>3</td>
+      <td><code>0000E2</code></td>
+      <td><code class="pre">...</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>11</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:50.014Z</td>
+      <td>1</td>
+      <td>4</td>
+      <td><code>00000000</code></td>
+      <td><code class="pre">....</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>12</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:50.013Z</td>
+      <td>1</td>
+      <td>3</td>
+      <td><code>37030E</code></td>
+      <td><code class="pre">7..</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>13</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:49.966Z</td>
+      <td>2</td>
+      <td>8</td>
+      <td><code>37039C4400076FDB</code></td>
+      <td><code class="pre">7..D..o.</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>14</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:49.892Z</td>
+      <td>1</td>
+      <td>1</td>
+      <td><code>B9</code></td>
+      <td><code class="pre">.</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>15</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:49.890Z</td>
+      <td>1</td>
+      <td>4</td>
+      <td><code>000000A5</code></td>
+      <td><code class="pre">....</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>16</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:49.889Z</td>
+      <td>1</td>
+      <td>4</td>
+      <td><code>20000000</code></td>
+      <td><code class="pre"> ...</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>17</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:49.888Z</td>
+      <td>1</td>
+      <td>4</td>
+      <td><code>000000E2</code></td>
+      <td><code class="pre">....</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>18</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:49.887Z</td>
+      <td>1</td>
+      <td>4</td>
+      <td><code>0E000000</code></td>
+      <td><code class="pre">....</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>19</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:49.887Z</td>
+      <td>1</td>
+      <td>2</td>
+      <td><code>3203</code></td>
+      <td><code class="pre">2.</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>20</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:49.841Z</td>
+      <td>2</td>
+      <td>8</td>
+      <td><code>32039C4400076F8E</code></td>
+      <td><code class="pre">2..D..o.</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>21</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:49.712Z</td>
+      <td>2</td>
+      <td>8</td>
+      <td><code>2D039C4400076DE1</code></td>
+      <td><code class="pre">-..D..m.</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>22</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:49.583Z</td>
+      <td>2</td>
+      <td>8</td>
+      <td><code>28039C4400076DB4</code></td>
+      <td><code class="pre">(..D..m.</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>23</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:49.453Z</td>
+      <td>2</td>
+      <td>8</td>
+      <td><code>23039C4400076CCF</code></td>
+      <td><code class="pre">#..D..l.</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>24</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:49.325Z</td>
+      <td>2</td>
+      <td>8</td>
+      <td><code>1E039C4400076822</code></td>
+      <td><code class="pre">...D..h"</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>25</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:49.198Z</td>
+      <td>2</td>
+      <td>8</td>
+      <td><code>19039C4400076995</code></td>
+      <td><code class="pre">...D..i.</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>26</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:49.068Z</td>
+      <td>2</td>
+      <td>8</td>
+      <td><code>14039C4400076888</code></td>
+      <td><code class="pre">...D..h.</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>27</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:48.941Z</td>
+      <td>2</td>
+      <td>8</td>
+      <td><code>0F039C4400076B63</code></td>
+      <td><code class="pre">...D..kc</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>28</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:48.814Z</td>
+      <td>2</td>
+      <td>8</td>
+      <td><code>0A039C4400076B36</code></td>
+      <td><code class="pre">
+..D..k6</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>29</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:48.740Z</td>
+      <td>1</td>
+      <td>2</td>
+      <td><code>B6E8</code></td>
+      <td><code class="pre">..</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>30</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:48.739Z</td>
+      <td>1</td>
+      <td>4</td>
+      <td><code>00000000</code></td>
+      <td><code class="pre">....</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>31</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:48.738Z</td>
+      <td>1</td>
+      <td>4</td>
+      <td><code>E2200000</code></td>
+      <td><code class="pre">. ..</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>32</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:48.737Z</td>
+      <td>1</td>
+      <td>3</td>
+      <td><code>000000</code></td>
+      <td><code class="pre">...</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>33</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:48.736Z</td>
+      <td>1</td>
+      <td>4</td>
+      <td><code>0E000000</code></td>
+      <td><code class="pre">....</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>34</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:48.736Z</td>
+      <td>1</td>
+      <td>2</td>
+      <td><code>3703</code></td>
+      <td><code class="pre">7.</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>35</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:48.689Z</td>
+      <td>2</td>
+      <td>8</td>
+      <td><code>37039C4400076FDB</code></td>
+      <td><code class="pre">7..D..o.</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>36</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:48.615Z</td>
+      <td>1</td>
+      <td>2</td>
+      <td><code>A5B9</code></td>
+      <td><code class="pre">..</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>37</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:48.614Z</td>
+      <td>1</td>
+      <td>4</td>
+      <td><code>00000000</code></td>
+      <td><code class="pre">....</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>38</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:48.613Z</td>
+      <td>1</td>
+      <td>4</td>
+      <td><code>E2200000</code></td>
+      <td><code class="pre">. ..</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>39</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:48.612Z</td>
+      <td>1</td>
+      <td>4</td>
+      <td><code>00000000</code></td>
+      <td><code class="pre">....</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>40</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:48.611Z</td>
+      <td>1</td>
+      <td>4</td>
+      <td><code>030E0000</code></td>
+      <td><code class="pre">....</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>41</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:48.611Z</td>
+      <td>1</td>
+      <td>1</td>
+      <td><code>32</code></td>
+      <td><code class="pre">2</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>42</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:48.563Z</td>
+      <td>2</td>
+      <td>8</td>
+      <td><code>32039C4400076F8E</code></td>
+      <td><code class="pre">2..D..o.</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>43</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:48.433Z</td>
+      <td>2</td>
+      <td>8</td>
+      <td><code>2D039C4400076DE1</code></td>
+      <td><code class="pre">-..D..m.</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>44</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:48.295Z</td>
+      <td>2</td>
+      <td>8</td>
+      <td><code>28039C4400076DB4</code></td>
+      <td><code class="pre">(..D..m.</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>45</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:48.167Z</td>
+      <td>2</td>
+      <td>8</td>
+      <td><code>23039C4400076CCF</code></td>
+      <td><code class="pre">#..D..l.</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>46</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:48.041Z</td>
+      <td>2</td>
+      <td>8</td>
+      <td><code>1E039C4400076822</code></td>
+      <td><code class="pre">...D..h"</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>47</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:47.913Z</td>
+      <td>2</td>
+      <td>8</td>
+      <td><code>19039C4400076995</code></td>
+      <td><code class="pre">...D..i.</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>48</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:47.784Z</td>
+      <td>2</td>
+      <td>8</td>
+      <td><code>14039C4400076888</code></td>
+      <td><code class="pre">...D..h.</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>49</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:47.649Z</td>
+      <td>2</td>
+      <td>8</td>
+      <td><code>0F039C4400076B63</code></td>
+      <td><code class="pre">...D..kc</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>50</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:47.512Z</td>
+      <td>2</td>
+      <td>8</td>
+      <td><code>0A039C4400076B36</code></td>
+      <td><code class="pre">
+..D..k6</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>51</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:47.437Z</td>
+      <td>1</td>
+      <td>3</td>
+      <td><code>1E956F</code></td>
+      <td><code class="pre">..o</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>52</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:47.435Z</td>
+      <td>1</td>
+      <td>3</td>
+      <td><code>006800</code></td>
+      <td><code class="pre">.h.</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>53</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:47.435Z</td>
+      <td>1</td>
+      <td>4</td>
+      <td><code>000002A2</code></td>
+      <td><code class="pre">....</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>54</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:47.433Z</td>
+      <td>1</td>
+      <td>4</td>
+      <td><code>030A0000</code></td>
+      <td><code class="pre">.
+..</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>55</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:47.432Z</td>
+      <td>1</td>
+      <td>1</td>
+      <td><code>37</code></td>
+      <td><code class="pre">7</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>56</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:47.387Z</td>
+      <td>2</td>
+      <td>8</td>
+      <td><code>37039C4D00053E18</code></td>
+      <td><code class="pre">7..M..&gt;.</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>57</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:47.299Z</td>
+      <td>1</td>
+      <td>3</td>
+      <td><code>1DAD5C</code></td>
+      <td><code class="pre">..\</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>58</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:47.298Z</td>
+      <td>1</td>
+      <td>4</td>
+      <td><code>A2006800</code></td>
+      <td><code class="pre">..h.</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>59</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:47.297Z</td>
+      <td>1</td>
+      <td>4</td>
+      <td><code>BF000002</code></td>
+      <td><code class="pre">....</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>60</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:47.296Z</td>
+      <td>1</td>
+      <td>4</td>
+      <td><code>32030A00</code></td>
+      <td><code class="pre">2.
+.</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>61</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:47.249Z</td>
+      <td>2</td>
+      <td>8</td>
+      <td><code>32039C4D00053E4D</code></td>
+      <td><code class="pre">2..M..&gt;M</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>62</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:47.112Z</td>
+      <td>2</td>
+      <td>8</td>
+      <td><code>2D039C4D00053C22</code></td>
+      <td><code class="pre">-..M..&lt;"</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>63</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:46.985Z</td>
+      <td>2</td>
+      <td>8</td>
+      <td><code>28039C4D00053C77</code></td>
+      <td><code class="pre">(..M..&lt;w</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>64</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:46.860Z</td>
+      <td>2</td>
+      <td>8</td>
+      <td><code>23039C4D00053D0C</code></td>
+      <td><code class="pre">#..M..=.</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>65</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:46.732Z</td>
+      <td>2</td>
+      <td>8</td>
+      <td><code>1E039C4D000539E1</code></td>
+      <td><code class="pre">...M..9.</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>66</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:46.599Z</td>
+      <td>2</td>
+      <td>8</td>
+      <td><code>19039C4D00053856</code></td>
+      <td><code class="pre">...M..8V</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>67</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:46.469Z</td>
+      <td>2</td>
+      <td>8</td>
+      <td><code>14039C4D0005394B</code></td>
+      <td><code class="pre">...M..9K</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>68</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:46.328Z</td>
+      <td>2</td>
+      <td>8</td>
+      <td><code>0F039C4D00053AA0</code></td>
+      <td><code class="pre">...M..:.</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>69</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:46.199Z</td>
+      <td>2</td>
+      <td>8</td>
+      <td><code>0A039C4D00053AF5</code></td>
+      <td><code class="pre">
+..M..:.</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>70</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:46.116Z</td>
+      <td>1</td>
+      <td>4</td>
+      <td><code>0000B6E8</code></td>
+      <td><code class="pre">....</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>71</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:46.115Z</td>
+      <td>1</td>
+      <td>4</td>
+      <td><code>00000000</code></td>
+      <td><code class="pre">....</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>72</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:46.114Z</td>
+      <td>1</td>
+      <td>4</td>
+      <td><code>0000E220</code></td>
+      <td><code class="pre">... </code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>73</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:46.113Z</td>
+      <td>1</td>
+      <td>3</td>
+      <td><code>000000</code></td>
+      <td><code class="pre">...</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>74</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:46.112Z</td>
+      <td>1</td>
+      <td>4</td>
+      <td><code>37030E00</code></td>
+      <td><code class="pre">7...</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>75</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:46.068Z</td>
+      <td>2</td>
+      <td>8</td>
+      <td><code>37039C4400076FDB</code></td>
+      <td><code class="pre">7..D..o.</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>76</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:45.993Z</td>
+      <td>1</td>
+      <td>3</td>
+      <td><code>00A5B9</code></td>
+      <td><code class="pre">...</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>77</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:45.991Z</td>
+      <td>1</td>
+      <td>4</td>
+      <td><code>00000000</code></td>
+      <td><code class="pre">....</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>78</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:45.990Z</td>
+      <td>1</td>
+      <td>4</td>
+      <td><code>00E22000</code></td>
+      <td><code class="pre">.. .</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>79</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:45.989Z</td>
+      <td>1</td>
+      <td>3</td>
+      <td><code>000000</code></td>
+      <td><code class="pre">...</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>80</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:45.988Z</td>
+      <td>1</td>
+      <td>4</td>
+      <td><code>030E0000</code></td>
+      <td><code class="pre">....</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>81</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:45.988Z</td>
+      <td>1</td>
+      <td>1</td>
+      <td><code>32</code></td>
+      <td><code class="pre">2</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>82</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:45.943Z</td>
+      <td>2</td>
+      <td>8</td>
+      <td><code>32039C4400076F8E</code></td>
+      <td><code class="pre">2..D..o.</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>83</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:45.810Z</td>
+      <td>2</td>
+      <td>8</td>
+      <td><code>2D039C4400076DE1</code></td>
+      <td><code class="pre">-..D..m.</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>84</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:45.682Z</td>
+      <td>2</td>
+      <td>8</td>
+      <td><code>28039C4400076DB4</code></td>
+      <td><code class="pre">(..D..m.</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>85</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:45.548Z</td>
+      <td>2</td>
+      <td>8</td>
+      <td><code>23039C4400076CCF</code></td>
+      <td><code class="pre">#..D..l.</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>86</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:45.416Z</td>
+      <td>2</td>
+      <td>8</td>
+      <td><code>1E039C4400076822</code></td>
+      <td><code class="pre">...D..h"</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>87</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:45.282Z</td>
+      <td>2</td>
+      <td>8</td>
+      <td><code>19039C4400076995</code></td>
+      <td><code class="pre">...D..i.</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>88</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:45.148Z</td>
+      <td>2</td>
+      <td>8</td>
+      <td><code>14039C4400076888</code></td>
+      <td><code class="pre">...D..h.</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>89</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:45.015Z</td>
+      <td>2</td>
+      <td>8</td>
+      <td><code>0F039C4400076B63</code></td>
+      <td><code class="pre">...D..kc</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>90</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:44.882Z</td>
+      <td>2</td>
+      <td>8</td>
+      <td><code>0A039C4400076B36</code></td>
+      <td><code class="pre">
+..D..k6</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>91</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:44.800Z</td>
+      <td>1</td>
+      <td>1</td>
+      <td><code>E8</code></td>
+      <td><code class="pre">.</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>92</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:44.798Z</td>
+      <td>1</td>
+      <td>4</td>
+      <td><code>000000B6</code></td>
+      <td><code class="pre">....</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>93</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:44.797Z</td>
+      <td>1</td>
+      <td>4</td>
+      <td><code>20000000</code></td>
+      <td><code class="pre"> ...</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>94</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:44.796Z</td>
+      <td>1</td>
+      <td>3</td>
+      <td><code>0000E2</code></td>
+      <td><code class="pre">...</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>95</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:44.795Z</td>
+      <td>1</td>
+      <td>4</td>
+      <td><code>00000000</code></td>
+      <td><code class="pre">....</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>96</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:44.795Z</td>
+      <td>1</td>
+      <td>3</td>
+      <td><code>37030E</code></td>
+      <td><code class="pre">7..</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>97</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:44.750Z</td>
+      <td>2</td>
+      <td>8</td>
+      <td><code>37039C4400076FDB</code></td>
+      <td><code class="pre">7..D..o.</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>98</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:44.677Z</td>
+      <td>1</td>
+      <td>1</td>
+      <td><code>B9</code></td>
+      <td><code class="pre">.</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>99</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:44.676Z</td>
+      <td>1</td>
+      <td>4</td>
+      <td><code>000000A5</code></td>
+      <td><code class="pre">....</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>100</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:44.675Z</td>
+      <td>1</td>
+      <td>4</td>
+      <td><code>20000000</code></td>
+      <td><code class="pre"> ...</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>101</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:44.674Z</td>
+      <td>1</td>
+      <td>4</td>
+      <td><code>000000E2</code></td>
+      <td><code class="pre">....</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>102</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:44.673Z</td>
+      <td>1</td>
+      <td>4</td>
+      <td><code>0E000000</code></td>
+      <td><code class="pre">....</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>103</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:44.672Z</td>
+      <td>1</td>
+      <td>2</td>
+      <td><code>3203</code></td>
+      <td><code class="pre">2.</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>104</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:44.627Z</td>
+      <td>2</td>
+      <td>8</td>
+      <td><code>32039C4400076F8E</code></td>
+      <td><code class="pre">2..D..o.</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>105</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:44.495Z</td>
+      <td>2</td>
+      <td>8</td>
+      <td><code>2D039C4400076DE1</code></td>
+      <td><code class="pre">-..D..m.</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>106</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:44.369Z</td>
+      <td>2</td>
+      <td>8</td>
+      <td><code>28039C4400076DB4</code></td>
+      <td><code class="pre">(..D..m.</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>107</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:44.229Z</td>
+      <td>2</td>
+      <td>8</td>
+      <td><code>23039C4400076CCF</code></td>
+      <td><code class="pre">#..D..l.</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>108</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:44.095Z</td>
+      <td>2</td>
+      <td>8</td>
+      <td><code>1E039C4400076822</code></td>
+      <td><code class="pre">...D..h"</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>109</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:43.963Z</td>
+      <td>2</td>
+      <td>8</td>
+      <td><code>19039C4400076995</code></td>
+      <td><code class="pre">...D..i.</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>110</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:43.836Z</td>
+      <td>2</td>
+      <td>8</td>
+      <td><code>14039C4400076888</code></td>
+      <td><code class="pre">...D..h.</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>111</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:43.711Z</td>
+      <td>2</td>
+      <td>8</td>
+      <td><code>0F039C4400076B63</code></td>
+      <td><code class="pre">...D..kc</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>112</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:43.579Z</td>
+      <td>2</td>
+      <td>8</td>
+      <td><code>0A039C4400076B36</code></td>
+      <td><code class="pre">
+..D..k6</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>113</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:43.497Z</td>
+      <td>1</td>
+      <td>2</td>
+      <td><code>B6E8</code></td>
+      <td><code class="pre">..</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>114</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:43.496Z</td>
+      <td>1</td>
+      <td>4</td>
+      <td><code>00000000</code></td>
+      <td><code class="pre">....</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>115</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:43.495Z</td>
+      <td>1</td>
+      <td>4</td>
+      <td><code>E2200000</code></td>
+      <td><code class="pre">. ..</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>116</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:43.494Z</td>
+      <td>1</td>
+      <td>4</td>
+      <td><code>00000000</code></td>
+      <td><code class="pre">....</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>117</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:43.492Z</td>
+      <td>1</td>
+      <td>3</td>
+      <td><code>0E0000</code></td>
+      <td><code class="pre">...</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>118</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:43.492Z</td>
+      <td>1</td>
+      <td>2</td>
+      <td><code>3703</code></td>
+      <td><code class="pre">7.</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>119</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:43.447Z</td>
+      <td>2</td>
+      <td>8</td>
+      <td><code>37039C4400076FDB</code></td>
+      <td><code class="pre">7..D..o.</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>120</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:43.362Z</td>
+      <td>1</td>
+      <td>2</td>
+      <td><code>A5B9</code></td>
+      <td><code class="pre">..</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>121</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:43.361Z</td>
+      <td>1</td>
+      <td>4</td>
+      <td><code>00000000</code></td>
+      <td><code class="pre">....</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>122</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:43.361Z</td>
+      <td>1</td>
+      <td>4</td>
+      <td><code>E2200000</code></td>
+      <td><code class="pre">. ..</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>123</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:43.359Z</td>
+      <td>1</td>
+      <td>4</td>
+      <td><code>00000000</code></td>
+      <td><code class="pre">....</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>124</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:43.358Z</td>
+      <td>1</td>
+      <td>4</td>
+      <td><code>030E0000</code></td>
+      <td><code class="pre">....</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>125</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:43.358Z</td>
+      <td>1</td>
+      <td>1</td>
+      <td><code>32</code></td>
+      <td><code class="pre">2</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>126</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:43.313Z</td>
+      <td>2</td>
+      <td>8</td>
+      <td><code>32039C4400076F8E</code></td>
+      <td><code class="pre">2..D..o.</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>127</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:43.179Z</td>
+      <td>2</td>
+      <td>8</td>
+      <td><code>2D039C4400076DE1</code></td>
+      <td><code class="pre">-..D..m.</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>128</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:43.048Z</td>
+      <td>2</td>
+      <td>8</td>
+      <td><code>28039C4400076DB4</code></td>
+      <td><code class="pre">(..D..m.</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>129</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:42.925Z</td>
+      <td>2</td>
+      <td>8</td>
+      <td><code>23039C4400076CCF</code></td>
+      <td><code class="pre">#..D..l.</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>130</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:42.796Z</td>
+      <td>2</td>
+      <td>8</td>
+      <td><code>1E039C4400076822</code></td>
+      <td><code class="pre">...D..h"</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>131</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:42.663Z</td>
+      <td>2</td>
+      <td>8</td>
+      <td><code>19039C4400076995</code></td>
+      <td><code class="pre">...D..i.</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>132</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:42.526Z</td>
+      <td>2</td>
+      <td>8</td>
+      <td><code>14039C4400076888</code></td>
+      <td><code class="pre">...D..h.</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>133</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:42.396Z</td>
+      <td>2</td>
+      <td>8</td>
+      <td><code>0F039C4400076B63</code></td>
+      <td><code class="pre">...D..kc</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>134</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:42.261Z</td>
+      <td>2</td>
+      <td>8</td>
+      <td><code>0A039C4400076B36</code></td>
+      <td><code class="pre">
+..D..k6</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>135</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:42.185Z</td>
+      <td>1</td>
+      <td>3</td>
+      <td><code>1E956F</code></td>
+      <td><code class="pre">..o</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>136</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:42.184Z</td>
+      <td>1</td>
+      <td>4</td>
+      <td><code>A2006800</code></td>
+      <td><code class="pre">..h.</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>137</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:42.183Z</td>
+      <td>1</td>
+      <td>3</td>
+      <td><code>000002</code></td>
+      <td><code class="pre">...</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>138</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:42.182Z</td>
+      <td>1</td>
+      <td>4</td>
+      <td><code>030A0000</code></td>
+      <td><code class="pre">.
+..</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>139</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:42.181Z</td>
+      <td>1</td>
+      <td>1</td>
+      <td><code>37</code></td>
+      <td><code class="pre">7</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>140</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:42.135Z</td>
+      <td>2</td>
+      <td>8</td>
+      <td><code>37039C4D00053E18</code></td>
+      <td><code class="pre">7..M..&gt;.</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>141</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:42.060Z</td>
+      <td>1</td>
+      <td>3</td>
+      <td><code>1DAD5C</code></td>
+      <td><code class="pre">..\</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>142</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:42.059Z</td>
+      <td>1</td>
+      <td>4</td>
+      <td><code>A2006800</code></td>
+      <td><code class="pre">..h.</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>143</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:42.058Z</td>
+      <td>1</td>
+      <td>4</td>
+      <td><code>BF000002</code></td>
+      <td><code class="pre">....</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>144</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:42.057Z</td>
+      <td>1</td>
+      <td>3</td>
+      <td><code>030A00</code></td>
+      <td><code class="pre">.
+.</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>145</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:42.056Z</td>
+      <td>1</td>
+      <td>1</td>
+      <td><code>32</code></td>
+      <td><code class="pre">2</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>146</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:42.010Z</td>
+      <td>2</td>
+      <td>8</td>
+      <td><code>32039C4D00053E4D</code></td>
+      <td><code class="pre">2..M..&gt;M</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>147</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:41.880Z</td>
+      <td>2</td>
+      <td>8</td>
+      <td><code>2D039C4D00053C22</code></td>
+      <td><code class="pre">-..M..&lt;"</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>148</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:41.749Z</td>
+      <td>2</td>
+      <td>8</td>
+      <td><code>28039C4D00053C77</code></td>
+      <td><code class="pre">(..M..&lt;w</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>149</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:41.621Z</td>
+      <td>2</td>
+      <td>8</td>
+      <td><code>23039C4D00053D0C</code></td>
+      <td><code class="pre">#..M..=.</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>150</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:41.493Z</td>
+      <td>2</td>
+      <td>8</td>
+      <td><code>1E039C4D000539E1</code></td>
+      <td><code class="pre">...M..9.</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>151</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:41.357Z</td>
+      <td>2</td>
+      <td>8</td>
+      <td><code>19039C4D00053856</code></td>
+      <td><code class="pre">...M..8V</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>152</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:41.225Z</td>
+      <td>2</td>
+      <td>8</td>
+      <td><code>14039C4D0005394B</code></td>
+      <td><code class="pre">...M..9K</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>153</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:41.098Z</td>
+      <td>2</td>
+      <td>8</td>
+      <td><code>0F039C4D00053AA0</code></td>
+      <td><code class="pre">...M..:.</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>154</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:40.970Z</td>
+      <td>2</td>
+      <td>8</td>
+      <td><code>0A039C4D00053AF5</code></td>
+      <td><code class="pre">
+..M..:.</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>155</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:40.893Z</td>
+      <td>1</td>
+      <td>4</td>
+      <td><code>0000B6E8</code></td>
+      <td><code class="pre">....</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>156</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:40.892Z</td>
+      <td>1</td>
+      <td>4</td>
+      <td><code>00000000</code></td>
+      <td><code class="pre">....</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>157</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:40.891Z</td>
+      <td>1</td>
+      <td>4</td>
+      <td><code>0000E220</code></td>
+      <td><code class="pre">... </code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>158</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:40.890Z</td>
+      <td>1</td>
+      <td>4</td>
+      <td><code>00000000</code></td>
+      <td><code class="pre">....</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>159</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:40.889Z</td>
+      <td>1</td>
+      <td>3</td>
+      <td><code>37030E</code></td>
+      <td><code class="pre">7..</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>160</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:40.843Z</td>
+      <td>2</td>
+      <td>8</td>
+      <td><code>37039C4400076FDB</code></td>
+      <td><code class="pre">7..D..o.</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>161</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:40.768Z</td>
+      <td>1</td>
+      <td>4</td>
+      <td><code>0000A5B9</code></td>
+      <td><code class="pre">....</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>162</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:40.767Z</td>
+      <td>1</td>
+      <td>4</td>
+      <td><code>00000000</code></td>
+      <td><code class="pre">....</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>163</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:40.766Z</td>
+      <td>1</td>
+      <td>3</td>
+      <td><code>00E220</code></td>
+      <td><code class="pre">.. </code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>164</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:40.765Z</td>
+      <td>1</td>
+      <td>4</td>
+      <td><code>00000000</code></td>
+      <td><code class="pre">....</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>165</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:40.764Z</td>
+      <td>1</td>
+      <td>4</td>
+      <td><code>32030E00</code></td>
+      <td><code class="pre">2...</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>166</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:40.717Z</td>
+      <td>2</td>
+      <td>8</td>
+      <td><code>32039C4400076F8E</code></td>
+      <td><code class="pre">2..D..o.</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>167</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:40.588Z</td>
+      <td>2</td>
+      <td>8</td>
+      <td><code>2D039C4400076DE1</code></td>
+      <td><code class="pre">-..D..m.</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>168</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:40.460Z</td>
+      <td>2</td>
+      <td>8</td>
+      <td><code>28039C4400076DB4</code></td>
+      <td><code class="pre">(..D..m.</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>169</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:40.336Z</td>
+      <td>2</td>
+      <td>8</td>
+      <td><code>23039C4400076CCF</code></td>
+      <td><code class="pre">#..D..l.</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>170</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:40.208Z</td>
+      <td>2</td>
+      <td>8</td>
+      <td><code>1E039C4400076822</code></td>
+      <td><code class="pre">...D..h"</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>171</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:40.080Z</td>
+      <td>2</td>
+      <td>8</td>
+      <td><code>19039C4400076995</code></td>
+      <td><code class="pre">...D..i.</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>172</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:39.951Z</td>
+      <td>2</td>
+      <td>8</td>
+      <td><code>14039C4400076888</code></td>
+      <td><code class="pre">...D..h.</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>173</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:39.823Z</td>
+      <td>2</td>
+      <td>8</td>
+      <td><code>0F039C4400076B63</code></td>
+      <td><code class="pre">...D..kc</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>174</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:39.696Z</td>
+      <td>2</td>
+      <td>8</td>
+      <td><code>0A039C4400076B36</code></td>
+      <td><code class="pre">
+..D..k6</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>175</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:39.621Z</td>
+      <td>1</td>
+      <td>1</td>
+      <td><code>E8</code></td>
+      <td><code class="pre">.</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>176</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:39.619Z</td>
+      <td>1</td>
+      <td>3</td>
+      <td><code>0000B6</code></td>
+      <td><code class="pre">...</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>177</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:39.618Z</td>
+      <td>1</td>
+      <td>4</td>
+      <td><code>00000000</code></td>
+      <td><code class="pre">....</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>178</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:39.617Z</td>
+      <td>1</td>
+      <td>4</td>
+      <td><code>0000E220</code></td>
+      <td><code class="pre">... </code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>179</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:39.616Z</td>
+      <td>1</td>
+      <td>4</td>
+      <td><code>00000000</code></td>
+      <td><code class="pre">....</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>180</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:39.616Z</td>
+      <td>1</td>
+      <td>3</td>
+      <td><code>37030E</code></td>
+      <td><code class="pre">7..</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>181</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:39.570Z</td>
+      <td>2</td>
+      <td>8</td>
+      <td><code>37039C4400076FDB</code></td>
+      <td><code class="pre">7..D..o.</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>182</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:39.494Z</td>
+      <td>1</td>
+      <td>1</td>
+      <td><code>B9</code></td>
+      <td><code class="pre">.</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>183</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:39.493Z</td>
+      <td>1</td>
+      <td>3</td>
+      <td><code>0000A5</code></td>
+      <td><code class="pre">...</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>184</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:39.492Z</td>
+      <td>1</td>
+      <td>4</td>
+      <td><code>00000000</code></td>
+      <td><code class="pre">....</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>185</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:39.491Z</td>
+      <td>1</td>
+      <td>4</td>
+      <td><code>0000E220</code></td>
+      <td><code class="pre">... </code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>186</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:39.490Z</td>
+      <td>1</td>
+      <td>4</td>
+      <td><code>00000000</code></td>
+      <td><code class="pre">....</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>187</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:39.488Z</td>
+      <td>1</td>
+      <td>3</td>
+      <td><code>32030E</code></td>
+      <td><code class="pre">2..</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>188</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:39.442Z</td>
+      <td>2</td>
+      <td>8</td>
+      <td><code>32039C4400076F8E</code></td>
+      <td><code class="pre">2..D..o.</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>189</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:39.309Z</td>
+      <td>2</td>
+      <td>8</td>
+      <td><code>2D039C4400076DE1</code></td>
+      <td><code class="pre">-..D..m.</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>190</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:39.183Z</td>
+      <td>2</td>
+      <td>8</td>
+      <td><code>28039C4400076DB4</code></td>
+      <td><code class="pre">(..D..m.</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>191</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:39.057Z</td>
+      <td>2</td>
+      <td>8</td>
+      <td><code>23039C4400076CCF</code></td>
+      <td><code class="pre">#..D..l.</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>192</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:38.932Z</td>
+      <td>2</td>
+      <td>8</td>
+      <td><code>1E039C4400076822</code></td>
+      <td><code class="pre">...D..h"</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>193</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:38.806Z</td>
+      <td>2</td>
+      <td>8</td>
+      <td><code>19039C4400076995</code></td>
+      <td><code class="pre">...D..i.</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>194</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:38.679Z</td>
+      <td>2</td>
+      <td>8</td>
+      <td><code>14039C4400076888</code></td>
+      <td><code class="pre">...D..h.</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>195</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:38.552Z</td>
+      <td>2</td>
+      <td>8</td>
+      <td><code>0F039C4400076B63</code></td>
+      <td><code class="pre">...D..kc</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>196</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:38.426Z</td>
+      <td>2</td>
+      <td>8</td>
+      <td><code>0A039C4400076B36</code></td>
+      <td><code class="pre">
+..D..k6</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>197</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:38.345Z</td>
+      <td>1</td>
+      <td>1</td>
+      <td><code>E8</code></td>
+      <td><code class="pre">.</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>198</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:38.344Z</td>
+      <td>1</td>
+      <td>4</td>
+      <td><code>000000B6</code></td>
+      <td><code class="pre">....</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>199</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:38.343Z</td>
+      <td>1</td>
+      <td>4</td>
+      <td><code>20000000</code></td>
+      <td><code class="pre"> ...</code></td></tr><tr style="background-color: rgb(247, 232, 212);">
+      <td>200</td>
+      <td>COM4</td>
+      <td>2025-09-25T08:05:38.342Z</td>
+      <td>1</td>
+      <td>4</td>
+      <td><code>000000E2</code></td>
+      <td><code class="pre">....</code></td></tr></tbody>
+  </table>
+<script>
+let timer;
+const portColors = new Map();
+function hashToHsl(str){
+  let h = 0;
+  for (let i=0;i<str.length;i++) h = Math.imul(31, h) + str.charCodeAt(i) | 0;
+  h = Math.abs(h) % 360;
+  const s = 70; // saturation
+  const l = 90; // lightness (pastel)
+  return `hsl(${h} ${s}% ${l}%)`;
+}
+function colorForPort(port){
+  if (!port) return "transparent";
+  if (!portColors.has(port)) portColors.set(port, hashToHsl(port));
+  return portColors.get(port);
+}
+function renderLegend(){
+  const legend = document.getElementById("legend");
+  if (!legend) return;
+  legend.innerHTML = "";
+  Array.from(portColors.keys()).sort().forEach(p => {
+    const div = document.createElement("div");
+    div.className = "item";
+    const sw = document.createElement("span");
+    sw.className = "swatch";
+    sw.style.backgroundColor = colorForPort(p);
+    const text = document.createElement("span");
+    text.textContent = p;
+    div.appendChild(sw);
+    div.appendChild(text);
+    legend.appendChild(div);
+  });
+}
+function render(rows) {
+  const tb = document.querySelector("#tbl tbody");
+  tb.innerHTML = "";
+  rows.forEach((e, idx) => {
+    const tr = document.createElement("tr");
+    const bg = colorForPort(e.port||"");
+    tr.style.backgroundColor = bg;
+    tr.innerHTML = `
+      <td>${idx+1}</td>
+      <td>${e.port||""}</td>
+      <td>${e.timestamp||""}</td>
+      <td>${e.type}</td>
+      <td>${e.length}</td>
+      <td><code>${e.data_hex||""}</code></td>
+      <td><code class="pre">${e.data_text||""}</code></td>`;
+    tb.appendChild(tr);
+  });
+  renderLegend();
+}
+async function load() {
+  try {
+    const p = new URLSearchParams();
+    const port = document.getElementById("flt_port").value.trim();
+    const type = document.getElementById("flt_type").value;
+    const limit = parseInt(document.getElementById("flt_limit").value || "200", 10);
+    if (port) p.set("port", port);
+    if (type) p.set("type", type);
+    if (limit) p.set("limit", String(Math.max(1, Math.min(1000, limit))));
+    const r = await fetch("/data?" + p.toString());
+    if (!r.ok) return;
+    const j = await r.json();
+    render(j);
+  } catch(e) {}
+}
+function start() {
+  clearInterval(timer);
+  load();
+  const ms = Math.max(250, parseInt(document.getElementById("interval").value || "1000", 10));
+  timer = setInterval(load, ms);
+}
+function reloadNow(){ load(); }
+start();
+</script>
+
+</body></html>
