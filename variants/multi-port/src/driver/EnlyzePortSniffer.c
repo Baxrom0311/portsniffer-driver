@@ -378,7 +378,7 @@ PortSnifferControlPopPortLogEntry(
         device = WdfCollectionGetItem(FilterDevices, i);
         filterContext = GetFilterContext(device);
 
-        if (RtlCompareUnicodeString(&filterContext->PortName, &unicodePortName, FALSE) == 0)
+        if (RtlCompareUnicodeString(&filterContext->PortName, &unicodePortName, TRUE) == 0)
         {
             status = PortSnifferControlPopPortLogEntryInternal(filterContext, response, &responseLength);
             
@@ -510,7 +510,7 @@ PortSnifferControlResetPortMonitoring(
         device = WdfCollectionGetItem(FilterDevices, i);
         filterContext = GetFilterContext(device);
 
-        if (RtlCompareUnicodeString(&filterContext->PortName, &unicodePortName, FALSE) == 0)
+        if (RtlCompareUnicodeString(&filterContext->PortName, &unicodePortName, TRUE) == 0)
         {
             // Set the new monitor mask, clear recorded events, and exit the loop.
             filterContext->MonitorMask = portMonitoringRequest->MonitorMask;
@@ -787,6 +787,9 @@ PortSnifferFilterEvtDeviceAdd(
 
     filterContext = GetFilterContext(device);
     WdfStringGetUnicodeString(portNameValueData, &filterContext->PortName);
+
+    KdPrint(("PortSniffer attached to %wZ\n", &filterContext->PortName));
+
     if (filterContext->PortName.Length >= PORTSNIFFER_PORTNAME_LENGTH)
     {
         KdPrint(("PortName is too long: %wZ\n", &filterContext->PortName));
@@ -852,6 +855,14 @@ PortSnifferFilterEvtDeviceAdd(
     // EvtDeviceCleanup observes a consistent view.
     WdfWaitLockAcquire(FilterDevicesLock, NULL);
     status = WdfCollectionAdd(FilterDevices, device);
+    if (!NT_SUCCESS(status))
+    {
+        KdPrint(("WdfCollectionAdd failed, status = 0x%08lX\n", status));
+    }
+    else
+    {
+        KdPrint(("Device %wZ successfully added to FilterDevices collection\n", &filterContext->PortName));
+    }
     if (!NT_SUCCESS(status))
     {
         WdfWaitLockRelease(FilterDevicesLock);
