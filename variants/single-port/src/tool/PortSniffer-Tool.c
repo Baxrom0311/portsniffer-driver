@@ -57,8 +57,8 @@ OpenPortSniffer(void)
 
 int __cdecl
 wmain(
-    __in int argc,
-    __in wchar_t* argv[]
+    int argc,
+    wchar_t* argv[]
     )
 {
     setbuf(stdout, NULL);

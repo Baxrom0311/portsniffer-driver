@@ -530,6 +530,7 @@ PortSnifferFilterAddPortLogEntry(
     PPORTLOG_ENTRY entry;
     WDFMEMORY entryMemory;
     NTSTATUS status;
+    NTSTATUS outStatus = STATUS_SUCCESS;
     WDFREQUEST requestToComplete = NULL;
     ULONG_PTR requestToCompleteLength = 0;
     NTSTATUS requestToCompleteStatus = STATUS_SUCCESS;
@@ -726,6 +727,7 @@ PortSnifferFilterEvtDeviceAdd(
     WDF_IO_QUEUE_CONFIG ioQueueConfig;
     WDF_OBJECT_ATTRIBUTES logEntryLockAttributes;
     WDFSTRING portNameValueData;
+    WDF_OBJECT_ATTRIBUTES portNameValueDataAttributes;
     WDF_IO_QUEUE_CONFIG readLogQueueConfig;
     WDF_OBJECT_ATTRIBUTES readLogQueueAttributes;
     WDFKEY regKey = WDF_NO_HANDLE;

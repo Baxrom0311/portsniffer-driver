@@ -615,7 +615,11 @@ HandleMonitorParameter(
     // Fetch new port log entries from our driver until we are terminated.
     while (!_bTerminationRequested)
     {
-        BOOL bSuccess = DeviceIoControl(hPortSnifferOv,
+        BOOL bSuccess;
+        DWORD dwError;
+        DWORD waitResult;
+
+        bSuccess = DeviceIoControl(hPortSnifferOv,
             (DWORD)PORTSNIFFER_IOCTL_CONTROL_POP_PORTLOG_ENTRY,
             &PopRequest,
             sizeof(PORTSNIFFER_POP_PORTLOG_ENTRY_REQUEST),
@@ -626,10 +630,10 @@ HandleMonitorParameter(
 
         if (!bSuccess)
         {
-            DWORD dwError = GetLastError();
+            dwError = GetLastError();
             if (dwError == ERROR_IO_PENDING)
             {
-                DWORD waitResult = WaitForMultipleObjects(2, WaitEvents, FALSE, INFINITE);
+                waitResult = WaitForMultipleObjects(2, WaitEvents, FALSE, INFINITE);
                 if (waitResult == WAIT_OBJECT_0 + 1)
                 {
                     // Termination requested

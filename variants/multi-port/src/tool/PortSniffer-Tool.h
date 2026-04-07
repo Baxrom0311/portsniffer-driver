@@ -13,6 +13,7 @@
 #include <strsafe.h>
 #include <SetupAPI.h>
 #include <wdfinstaller.h>
+#include <wchar.h>
 
 #include "../ioctl.h"
 #include "../version.h"

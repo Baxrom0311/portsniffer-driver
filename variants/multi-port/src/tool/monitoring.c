@@ -577,7 +577,14 @@ HandleMonitorParameterMulti(
     PORTSNIFFER_RESET_PORT_MONITORING_REQUEST ResetPortMonitoringRequest[MAX_MONITORING_PORTS];
     WCHAR wszForward[1024];
 
+    DWORD waitResult;
+    DWORD finishedPortIdx;
+    DWORD bytesTransferred;
+    BOOL result;
+    PPORTSNIFFER_POP_PORTLOG_ENTRY_RESPONSE pPopResponse;
+
     ZeroMemory(WaitEvents, sizeof(WaitEvents));
+    if (nPortCount == 0)
     {
         fprintf(stderr, "At least one port must be provided.\n");
         goto Cleanup;
@@ -746,23 +753,23 @@ HandleMonitorParameterMulti(
             }
         }
 
-        DWORD waitResult = WaitForMultipleObjects(nPortCount + 1, WaitEvents, FALSE, INFINITE);
+        waitResult = WaitForMultipleObjects(nPortCount + 1, WaitEvents, FALSE, INFINITE);
         if (waitResult == WAIT_OBJECT_0 + nPortCount)
         {
             // Termination event triggered
             break;
         }
-        else if (waitResult >= WAIT_OBJECT_0 && waitResult < WAIT_OBJECT_0 + nPortCount)
+        else if (waitResult < WAIT_OBJECT_0 + nPortCount)
         {
-            DWORD finishedPortIdx = waitResult - WAIT_OBJECT_0;
-            DWORD bytesTransferred = 0;
+            finishedPortIdx = waitResult - WAIT_OBJECT_0;
+            bytesTransferred = 0;
 
-            BOOL result = GetOverlappedResult(hPortSnifferOv, &PopOverlapped[finishedPortIdx], &bytesTransferred, FALSE);
+            result = GetOverlappedResult(hPortSnifferOv, &PopOverlapped[finishedPortIdx], &bytesTransferred, FALSE);
             bIsPending[finishedPortIdx] = FALSE; // We processed it, mark to reissue
 
             if (result && bytesTransferred > 0)
             {
-                PPORTSNIFFER_POP_PORTLOG_ENTRY_RESPONSE pPopResponse = (PPORTSNIFFER_POP_PORTLOG_ENTRY_RESPONSE)PopResponseBuffer[finishedPortIdx];
+                pPopResponse = (PPORTSNIFFER_POP_PORTLOG_ENTRY_RESPONSE)PopResponseBuffer[finishedPortIdx];
                 
                 if (!_PrintResponse(pPopResponse, PopRequest[finishedPortIdx].PortName))
                 {

@@ -41,10 +41,9 @@ _PrintUsage()
 
 static BOOL
 _ContainsForwardToken(
-    __in int argc,
-    __in_ecount(argc) wchar_t* argv[],
-    __in int startIndex,
-    __in int endIndex
+    wchar_t* argv[],
+    int startIndex,
+    int endIndex
     )
 {
     int i;
@@ -80,8 +79,8 @@ OpenPortSniffer(void)
 
 int __cdecl
 wmain(
-    __in int argc,
-    __in wchar_t* argv[]
+    int argc,
+    wchar_t* argv[]
     )
 {
     setbuf(stdout, NULL);
@@ -144,12 +143,12 @@ wmain(
             pwszForward = argv[argc - 1];
             lastMonitorArg = argc - 3;
 
-            if (_ContainsForwardToken(argc, argv, firstPortIndex, argc - 2))
+            if (_ContainsForwardToken(argv, firstPortIndex, argc - 2))
             {
                 return _PrintUsage();
             }
         }
-        else if (_ContainsForwardToken(argc, argv, firstPortIndex, argc))
+        else if (_ContainsForwardToken(argv, firstPortIndex, argc))
         {
             return _PrintUsage();
         }
