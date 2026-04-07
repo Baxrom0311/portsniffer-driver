@@ -1,0 +1,18 @@
+portsniffer-driver
+==================
+
+This project is a fork and customization of the upstream "ENLYZE PortSniffer"
+project, originally created by Colin Finck (ENLYZE GmbH).
+
+The driver and CLI tool sources retain their original MIT copyright notices
+as required by the MIT license. Additions, fixes and the surrounding tooling
+in this repository are Copyright (c) 2025 Bahrom0311.
+
+Notable changes from the upstream project:
+  - Two maintained variants under variants/ (single-port, multi-port)
+  - Multi-SZ string iteration bug fixed in installation.c and setup.c
+  - HTTP forwarding pipeline and Flask ingest server
+  - WinForms launcher around the CLI
+  - Repository restructured: legacy snapshots moved to archive/legacy
+
+See LICENSE for full license text.
