@@ -1,4 +1,5 @@
-# pip install flask
+import psycopg2
+from psycopg2.extras import RealDictCursor
 from flask import Flask, request, jsonify, render_template_string
 from collections import deque
 import json
@@ -6,10 +7,49 @@ import time
 import binascii
 import html
 import threading
+import os
 
 app = Flask(__name__)
 events = deque(maxlen=1000)
 events_lock = threading.RLock()
+
+# Database Configuration
+DB_CONFIG = {
+    "dbname": "portsniffer_db",
+    "user": "baxrom",
+    "host": "localhost",
+    "port": 5432
+}
+
+def get_db_connection():
+    return psycopg2.connect(**DB_CONFIG)
+
+def init_db():
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS port_logs (
+                id SERIAL PRIMARY KEY,
+                port TEXT NOT NULL,
+                timestamp TEXT,
+                type INTEGER,
+                length INTEGER,
+                data_hex TEXT,
+                data_text TEXT,
+                ts_received BIGINT
+            );
+            CREATE INDEX IF NOT EXISTS idx_port_logs_port ON port_logs(port);
+            CREATE INDEX IF NOT EXISTS idx_port_logs_ts ON port_logs(ts_received DESC);
+        """)
+        conn.commit()
+        cur.close()
+        conn.close()
+    except Exception as e:
+        print(f"Error initializing database: {e}")
+
+# Initialize the database table
+init_db()
 
 PAGE = """
 <!doctype html>
@@ -193,93 +233,106 @@ def decode_request_payload():
 
 @app.route("/data")
 def data():
-  # Filtrlar: port, type, limit, combine, gap_ms
-  q_port = (request.args.get("port") or "").strip()
-  q_type = request.args.get("type")
-  q_limit = request.args.get("limit", type=int) or 200
-  q_limit = max(1, min(1000, q_limit))
-  q_combine = request.args.get("combine") in ("1", "true", "yes")
-  q_gap = request.args.get("gap_ms", type=int) or 50
-  q_gap = max(5, min(1000, q_gap))
+    # Filtrlar: port, type, limit, combine, gap_ms
+    q_port = (request.args.get("port") or "").strip()
+    q_type = request.args.get("type")
+    q_limit = request.args.get("limit", type=int) or 200
+    q_limit = max(1, min(10000, q_limit))  # Allow higher limit for DB
+    q_combine = request.args.get("combine") in ("1", "true", "yes")
+    q_gap = request.args.get("gap_ms", type=int) or 50
+    q_gap = max(5, min(1000, q_gap))
 
-  with events_lock:
-    src = list(events)
-  # Chronological processing for combine
-  src_chrono = list(src)
-  # Filter early to speed
-  if q_port:
-    src_chrono = [e for e in src_chrono if str(e.get("port", "")).lower() == q_port.lower()]
-  if q_type and q_type.isdigit():
+    # Query from Database
     try:
-      tval = int(q_type)
-      src_chrono = [e for e in src_chrono if int(e.get("type", -1)) == tval]
-    except Exception:
-      pass
+        conn = get_db_connection()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        
+        query = "SELECT port, timestamp, type, length, data_hex, data_text, ts_received FROM port_logs WHERE 1=1"
+        params = []
+        
+        if q_port:
+            query += " AND LOWER(port) = LOWER(%s)"
+            params.append(q_port)
+            
+        if q_type and q_type.isdigit():
+            query += " AND type = %s"
+            params.append(int(q_type))
+            
+        query += " ORDER BY ts_received DESC LIMIT %s"
+        params.append(q_limit)
+        
+        cur.execute(query, params)
+        src = cur.fetchall()
+        cur.close()
+        conn.close()
+    except Exception as e:
+        app.logger.error("Database query error: %s", e)
+        with events_lock:
+            src = list(events)
 
-  if q_combine:
-    out = []
-    cur = None
-    last_ts = None
-    for e in src_chrono:
-      try:
-        ts = int(e.get("ts_received") or 0)
-      except Exception:
-        ts = 0
-      if not cur:
-        cur = dict(e)
-        # normalize
-        cur["data_hex"] = cur.get("data_hex", "")
-        cur["data_text"] = cur.get("data_text", "")
-        try:
-          cur["length"] = int(cur.get("length") or 0)
-        except Exception:
-          cur["length"] = 0
-        last_ts = ts
-        continue
+    # Chronological processing for combine (DB returns newest first, so reverse to process)
+    src.reverse() 
+    src_chrono = src
 
-      same_group = (e.get("port") == cur.get("port") and e.get("type") == cur.get("type"))
-      close_in_time = (ts - last_ts) <= q_gap if (ts and last_ts) else True
+    if q_combine:
+        out = []
+        cur_row = None
+        last_ts = None
+        for e in src_chrono:
+            try:
+                ts = int(e.get("ts_received") or 0)
+            except Exception:
+                ts = 0
+            if not cur_row:
+                cur_row = dict(e)
+                cur_row["data_hex"] = cur_row.get("data_hex", "")
+                cur_row["data_text"] = cur_row.get("data_text", "")
+                try:
+                    cur_row["length"] = int(cur_row.get("length") or 0)
+                except Exception:
+                    cur_row["length"] = 0
+                last_ts = ts
+                continue
 
-      # If different group or gap too large -> flush
-      if not same_group or not close_in_time:
-        out.append(cur)
-        cur = dict(e)
-        cur["data_hex"] = cur.get("data_hex", "")
-        cur["data_text"] = cur.get("data_text", "")
-        try:
-          cur["length"] = int(cur.get("length") or 0)
-        except Exception:
-          cur["length"] = 0
-        last_ts = ts
-        continue
+            same_group = (e.get("port") == cur_row.get("port") and e.get("type") == cur_row.get("type"))
+            close_in_time = (ts - last_ts) <= q_gap if (ts and last_ts) else True
 
-      # Merge into current with output size guards.
-      new_hex = cur.get("data_hex", "") + e.get("data_hex", "")
-      new_text = cur.get("data_text", "") + e.get("data_text", "")
-      if len(new_hex) > 10000:
-        new_hex = new_hex[:10000] + "...[truncated]"
-      if len(new_text) > 10000:
-        new_text = new_text[:10000] + "...[truncated]"
-      cur["data_hex"] = new_hex
-      cur["data_text"] = new_text
-      try:
-        cur["length"] = int(cur.get("length") or 0) + int(e.get("length") or 0)
-      except Exception:
-        cur["length"] = len(cur["data_hex"]) // 2
-      # Keep the latest timestamp string
-      if e.get("timestamp"):
-        cur["timestamp"] = e.get("timestamp")
-      last_ts = ts
+            if not same_group or not close_in_time:
+                out.append(cur_row)
+                cur_row = dict(e)
+                cur_row["data_hex"] = cur_row.get("data_hex", "")
+                cur_row["data_text"] = cur_row.get("data_text", "")
+                try:
+                    cur_row["length"] = int(cur_row.get("length") or 0)
+                except Exception:
+                    cur_row["length"] = 0
+                last_ts = ts
+                continue
 
-    if cur:
-      out.append(cur)
-  else:
-    out = src_chrono
+            new_hex = cur_row.get("data_hex", "") + e.get("data_hex", "")
+            new_text = cur_row.get("data_text", "") + e.get("data_text", "")
+            if len(new_hex) > 10000:
+                new_hex = new_hex[:10000] + "...[truncated]"
+            if len(new_text) > 10000:
+                new_text = new_text[:10000] + "...[truncated]"
+            cur_row["data_hex"] = new_hex
+            cur_row["data_text"] = new_text
+            try:
+                cur_row["length"] = int(cur_row.get("length") or 0) + int(e.get("length") or 0)
+            except Exception:
+                cur_row["length"] = len(cur_row["data_hex"]) // 2
+            if e.get("timestamp"):
+                cur_row["timestamp"] = e.get("timestamp")
+            last_ts = ts
 
-  # Newest first for UI
-  out.reverse()
-  out = out[:q_limit]
-  return jsonify(out)
+        if cur_row:
+            out.append(cur_row)
+    else:
+        out = src_chrono
+
+    # Newest first for UI
+    out.reverse()
+    return jsonify(out)
 
 def _normalize_one(obj: dict):
   data_hex = obj.get("data_hex", "")
@@ -289,23 +342,46 @@ def _normalize_one(obj: dict):
 
 @app.route("/ingest", methods=["POST"])
 def ingest():
-  try:
-    payload = decode_request_payload()
-    with events_lock:
-      if isinstance(payload, list):
-        for obj in payload:
-          if isinstance(obj, dict):
-            events.append(_normalize_one(obj))
-      elif isinstance(payload, dict):
-        events.append(_normalize_one(payload))
-      else:
-        events.append(_normalize_one({"raw": str(payload)}))
-    return "OK", 200
-  except Exception as e:
-    app.logger.error("Error in /ingest endpoint: %s", e)
-    return f"ERR: {e}", 400
+    try:
+        payload = decode_request_payload()
+        objs = []
+        if isinstance(payload, list):
+            objs = [_normalize_one(obj) for obj in payload if isinstance(obj, dict)]
+        elif isinstance(payload, dict):
+            objs = [_normalize_one(payload)]
+        else:
+            objs = [_normalize_one({"raw": str(payload)})]
+
+        # Single transaction for the batch
+        conn = get_db_connection()
+        cur = conn.cursor()
+        for obj in objs:
+            cur.execute("""
+                INSERT INTO port_logs (port, timestamp, type, length, data_hex, data_text, ts_received)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+            """, (
+                obj.get("port"),
+                obj.get("timestamp"),
+                obj.get("type"),
+                obj.get("length"),
+                obj.get("data_hex"),
+                obj.get("data_text"),
+                obj.get("ts_received")
+            ))
+            # Also keep in memory for "Live Feed" if UI is open and polling
+            with events_lock:
+                events.append(obj)
+        
+        conn.commit()
+        cur.close()
+        conn.close()
+        
+        return "OK", 200
+    except Exception as e:
+        app.logger.error("Error in /ingest endpoint: %s", e)
+        return f"ERR: {e}", 400
 
 if __name__ == "__main__":
-  # Bind to loopback by default — the ingest endpoint has no auth and must
-  # not be exposed on the network. Override via a reverse proxy if needed.
-  app.run(host="127.0.0.1", port=8000, debug=False)
+  # Bind to 0.0.0.0 to allow incoming connections from the target Windows machine.
+  # Note: The /ingest endpoint has no authentication; use a firewall or proxy in production.
+  app.run(host="0.0.0.0", port=8005, debug=False)

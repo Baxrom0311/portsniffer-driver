@@ -44,14 +44,24 @@ DriverEntry(
     WDF_DRIVER_CONFIG config;
     NTSTATUS status;
 
+    WDFDRIVER driver;
+
     KdPrint(("ENLYZE PortSniffer Driver " PORTSNIFFER_VERSION_COMBINED "\n"));
 
     // Create our driver object.
     WDF_DRIVER_CONFIG_INIT(&config, PortSnifferFilterEvtDeviceAdd);
-    status = WdfDriverCreate(DriverObject, RegistryPath, WDF_NO_OBJECT_ATTRIBUTES, &config, WDF_NO_HANDLE);
+    status = WdfDriverCreate(DriverObject, RegistryPath, WDF_NO_OBJECT_ATTRIBUTES, &config, &driver);
     if (!NT_SUCCESS(status))
     {
         KdPrint(("WdfDriverCreate failed, status = 0x%08lX\n", status));
+        return status;
+    }
+
+    // Create our control device.
+    status = PortSnifferControlCreate(driver);
+    if (!NT_SUCCESS(status))
+    {
+        KdPrint(("PortSnifferControlCreate failed, status = 0x%08lX\n", status));
         return status;
     }
 
