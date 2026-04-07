@@ -216,7 +216,7 @@ int
 HandleInstallParameter(void)
 {
     WDF_COINSTALLER_INSTALL_OPTIONS clientOptions;
-    HANDLE hCoInstaller;
+    HANDLE hCoInstaller = NULL;
     HANDLE hSC = NULL;
     HANDLE hService = NULL;
     ULONG installStatus;
@@ -359,13 +359,18 @@ Cleanup:
         DeleteFileW(wszInfPath);
     }
 
+    if (hCoInstaller)
+    {
+        FreeLibrary((HMODULE)hCoInstaller);
+    }
+
     return iReturnValue;
 }
 
 int
 HandleUninstallParameter(void)
 {
-    HANDLE hCoInstaller;
+    HANDLE hCoInstaller = NULL;
     HANDLE hSC = NULL;
     HANDLE hService = NULL;
     ULONG installStatus;
@@ -487,6 +492,11 @@ Cleanup:
         // Try to delete the .inf file.
         // Failure to do so doesn't matter here.
         DeleteFileW(wszInfPath);
+    }
+
+    if (hCoInstaller)
+    {
+        FreeLibrary((HMODULE)hCoInstaller);
     }
 
     return iReturnValue;

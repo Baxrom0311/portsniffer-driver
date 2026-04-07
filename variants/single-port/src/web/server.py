@@ -49,19 +49,30 @@ PAGE = """
   </table>
 <script>
 let timer;
+function addCell(tr, value, {code=false, pre=false} = {}) {
+  const td = document.createElement("td");
+  if (code) {
+    const c = document.createElement("code");
+    if (pre) c.className = "pre";
+    c.textContent = value == null ? "" : String(value);
+    td.appendChild(c);
+  } else {
+    td.textContent = value == null ? "" : String(value);
+  }
+  tr.appendChild(td);
+}
 function render(rows) {
   const tb = document.querySelector("#tbl tbody");
   tb.innerHTML = "";
   rows.forEach((e, idx) => {
     const tr = document.createElement("tr");
-    tr.innerHTML = `
-      <td>${idx+1}</td>
-      <td>${e.port||""}</td>
-      <td>${e.timestamp||""}</td>
-      <td>${e.type}</td>
-      <td>${e.length}</td>
-      <td><code>${e.data_hex||""}</code></td>
-      <td><code class="pre">${e.data_text||""}</code></td>`;
+    addCell(tr, idx + 1);
+    addCell(tr, e.port || "");
+    addCell(tr, e.timestamp || "");
+    addCell(tr, e.type);
+    addCell(tr, e.length);
+    addCell(tr, e.data_hex || "", {code: true});
+    addCell(tr, e.data_text || "", {code: true, pre: true});
     tb.appendChild(tr);
   });
 }
@@ -149,4 +160,6 @@ def ingest():
     return f"ERR: {e}", 400
 
 if __name__ == "__main__":
-  app.run(host="0.0.0.0", port=8000, debug=False)
+  # Bind to loopback by default — the ingest endpoint has no auth and must
+  # not be exposed on the network. Override via a reverse proxy if needed.
+  app.run(host="127.0.0.1", port=8000, debug=False)

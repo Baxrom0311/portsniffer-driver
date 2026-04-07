@@ -45,23 +45,34 @@ typedef struct _FILTER_CONTEXT
     WDFWAITLOCK LogEntryLock;
     USHORT LogEntryCount;
 
-    WDFWORKITEM ReadWorkItem;
+    // Manual-dispatch queue where completed read requests are forwarded so the
+    // completion work can run at PASSIVE_LEVEL without a shared work item.
+    WDFQUEUE ReadLogQueue;
+
+    // The pending POP request for this port, if any.
+    WDFREQUEST PendingPopRequest;
+
+    // TRUE once this device has been added to the FilterDevices collection so
+    // EvtDeviceCleanup knows it has to undo that add.
+    BOOLEAN InFilterDevicesCollection;
 }
 FILTER_CONTEXT, *PFILTER_CONTEXT;
 
 WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(FILTER_CONTEXT, GetFilterContext)
 
 
-typedef struct _READ_WORK_ITEM_CONTEXT
+// Per-request context attached to every read request we forward to the
+// ReadLogQueue. This avoids the single-work-item overwrite race that plagued
+// the previous design under concurrent reads.
+typedef struct _READ_REQUEST_CONTEXT
 {
-    WDFREQUEST Request;
     PUCHAR ReadBuffer;
     size_t BytesRead;
     PFILTER_CONTEXT FilterContext;
 }
-READ_WORK_ITEM_CONTEXT, *PREAD_WORK_ITEM_CONTEXT;
+READ_REQUEST_CONTEXT, *PREAD_REQUEST_CONTEXT;
 
-WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(READ_WORK_ITEM_CONTEXT, GetReadWorkItemContext)
+WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(READ_REQUEST_CONTEXT, GetReadRequestContext)
 
 
 DRIVER_INITIALIZE DriverEntry;
@@ -140,6 +151,8 @@ EVT_WDF_IO_QUEUE_IO_READ PortSnifferFilterEvtIoRead;
 
 EVT_WDF_REQUEST_COMPLETION_ROUTINE PortSnifferFilterEvtIoReadCompletionRoutine;
 
-EVT_WDF_WORKITEM PortSnifferFilterEvtIoReadCompletionWorkItem;
+EVT_WDF_IO_QUEUE_IO_READ PortSnifferFilterEvtReadLogQueueIoRead;
+
+EVT_WDF_REQUEST_CANCEL PortSnifferEvtPendingPopRequestCancel;
 
 EVT_WDF_IO_QUEUE_IO_WRITE PortSnifferFilterEvtIoWrite;

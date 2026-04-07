@@ -15,6 +15,7 @@ typedef struct _FLAG_TRANSLATION
 FLAG_TRANSLATION;
 
 static BOOL _bTerminationRequested = FALSE;
+static HANDLE g_hTerminateEvent = NULL;
 
 
 static BOOL WINAPI
@@ -25,6 +26,10 @@ _CtrlHandlerRoutine(
     UNREFERENCED_PARAMETER(dwCtrlType);
 
     _bTerminationRequested = TRUE;
+    if (g_hTerminateEvent != NULL)
+    {
+        SetEvent(g_hTerminateEvent);
+    }
     return TRUE;
 }
 
@@ -418,25 +423,78 @@ typedef BOOL (WINAPI *PFN_WinHttpCloseHandle)(HINTERNET);
 #define WINHTTP_FLAG_SECURE 0x00800000
 #endif
 
+// WinHTTP state
+static HMODULE g_hWinHttp = NULL;
+static PFN_WinHttpOpen g_pWinHttpOpen = NULL;
+static PFN_WinHttpConnect g_pWinHttpConnect = NULL;
+static PFN_WinHttpOpenRequest g_pWinHttpOpenRequest = NULL;
+static PFN_WinHttpSendRequest g_pWinHttpSendRequest = NULL;
+static PFN_WinHttpReceiveResponse g_pWinHttpReceiveResponse = NULL;
+static PFN_WinHttpCloseHandle g_pWinHttpCloseHandle = NULL;
+static HINTERNET g_hWinHttpSession = NULL;
+static HINTERNET g_hWinHttpConnect = NULL;
+static WCHAR g_wszHttpPath[1024] = {0};
+static BOOL g_bHttps = FALSE;
+
+static void _CleanupWinHttp(void)
+{
+    if (g_pWinHttpCloseHandle)
+    {
+        if (g_hWinHttpConnect) g_pWinHttpCloseHandle(g_hWinHttpConnect);
+        if (g_hWinHttpSession) g_pWinHttpCloseHandle(g_hWinHttpSession);
+    }
+    g_hWinHttpConnect = NULL;
+    g_hWinHttpSession = NULL;
+    if (g_hWinHttp)
+    {
+        FreeLibrary(g_hWinHttp);
+        g_hWinHttp = NULL;
+    }
+}
+
+static BOOL _InitWinHttp(__in PCWSTR pwszUrl)
+{
+    WCHAR host[256];
+    USHORT port;
+
+    if (!_ParseUrl(pwszUrl, host, _countof(host), g_wszHttpPath, _countof(g_wszHttpPath), &port, &g_bHttps))
+    {
+        fprintf(stderr, "Invalid URL: %S\n", pwszUrl);
+        return FALSE;
+    }
+
+    g_hWinHttp = LoadLibraryW(L"winhttp.dll");
+    if (!g_hWinHttp) { fprintf(stderr, "winhttp.dll not found.\n"); return FALSE; }
+
+    g_pWinHttpOpen = (PFN_WinHttpOpen)GetProcAddress(g_hWinHttp, "WinHttpOpen");
+    g_pWinHttpConnect = (PFN_WinHttpConnect)GetProcAddress(g_hWinHttp, "WinHttpConnect");
+    g_pWinHttpOpenRequest = (PFN_WinHttpOpenRequest)GetProcAddress(g_hWinHttp, "WinHttpOpenRequest");
+    g_pWinHttpSendRequest = (PFN_WinHttpSendRequest)GetProcAddress(g_hWinHttp, "WinHttpSendRequest");
+    g_pWinHttpReceiveResponse = (PFN_WinHttpReceiveResponse)GetProcAddress(g_hWinHttp, "WinHttpReceiveResponse");
+    g_pWinHttpCloseHandle = (PFN_WinHttpCloseHandle)GetProcAddress(g_hWinHttp, "WinHttpCloseHandle");
+
+    if (!g_pWinHttpOpen || !g_pWinHttpConnect || !g_pWinHttpOpenRequest || 
+        !g_pWinHttpSendRequest || !g_pWinHttpReceiveResponse || !g_pWinHttpCloseHandle)
+    {
+        _CleanupWinHttp();
+        return FALSE;
+    }
+
+    g_hWinHttpSession = g_pWinHttpOpen(L"PortSniffer-Tool/1.0", 0, NULL, NULL, 0);
+    if (!g_hWinHttpSession) { _CleanupWinHttp(); return FALSE; }
+
+    g_hWinHttpConnect = g_pWinHttpConnect(g_hWinHttpSession, host, port, 0);
+    if (!g_hWinHttpConnect) { _CleanupWinHttp(); return FALSE; }
+
+    return TRUE;
+}
+
 BOOL SendLogEntryToApi(
-    __in PCWSTR pwszUrl,
+    __in PCWSTR pwszUrl, // maintained in signature for compatibility but ignored since we statefully initialized
     __in PCWSTR pwszPort,
     __in PPORTSNIFFER_POP_PORTLOG_ENTRY_RESPONSE pEntry
     )
 {
-    WCHAR host[256];
-    WCHAR path[1024];
-    USHORT port;
-    BOOL https;
-    HMODULE h;
-    PFN_WinHttpOpen pOpen;
-    PFN_WinHttpConnect pConnect;
-    PFN_WinHttpOpenRequest pOpenRequest;
-    PFN_WinHttpSendRequest pSend;
-    PFN_WinHttpReceiveResponse pRecv;
-    PFN_WinHttpCloseHandle pClose;
-    HINTERNET hSession;
-    HINTERNET hConn;
     HINTERNET hReq;
     DWORD flags;
     SYSTEMTIME st;
@@ -447,31 +505,16 @@ BOOL SendLogEntryToApi(
     int utf8Len;
     BOOL ok;
 
-    if (!_ParseUrl(pwszUrl, host, _countof(host), path, _countof(path), &port, &https))
+    UNREFERENCED_PARAMETER(pwszUrl);
+
+    if (!g_hWinHttpConnect)
     {
-        fprintf(stderr, "Invalid URL: %S\n", pwszUrl);
-        return FALSE;
+        return FALSE; // Not initialized or failed
     }
 
-    h = LoadLibraryW(L"winhttp.dll");
-    if (!h) { fprintf(stderr, "winhttp.dll not found.\n"); return FALSE; }
-
-    pOpen = (PFN_WinHttpOpen)GetProcAddress(h, "WinHttpOpen");
-    pConnect = (PFN_WinHttpConnect)GetProcAddress(h, "WinHttpConnect");
-    pOpenRequest = (PFN_WinHttpOpenRequest)GetProcAddress(h, "WinHttpOpenRequest");
-    pSend = (PFN_WinHttpSendRequest)GetProcAddress(h, "WinHttpSendRequest");
-    pRecv = (PFN_WinHttpReceiveResponse)GetProcAddress(h, "WinHttpReceiveResponse");
-    pClose = (PFN_WinHttpCloseHandle)GetProcAddress(h, "WinHttpCloseHandle");
-    if (!pOpen || !pConnect || !pOpenRequest || !pSend || !pRecv || !pClose)
-    { FreeLibrary(h); return FALSE; }
-
-    hSession = pOpen(L"PortSniffer-Tool/1.0", 0, NULL, NULL, 0);
-    if (!hSession) { FreeLibrary(h); return FALSE; }
-    hConn = pConnect(hSession, host, port, 0);
-    if (!hConn) { pClose(hSession); FreeLibrary(h); return FALSE; }
-    flags = https ? WINHTTP_FLAG_SECURE : 0;
-    hReq = pOpenRequest(hConn, L"POST", path, NULL, NULL, NULL, flags);
-    if (!hReq) { pClose(hConn); pClose(hSession); FreeLibrary(h); return FALSE; }
+    flags = g_bHttps ? WINHTTP_FLAG_SECURE : 0;
+    hReq = g_pWinHttpOpenRequest(g_hWinHttpConnect, L"POST", g_wszHttpPath, NULL, NULL, NULL, flags);
+    if (!hReq) { return FALSE; }
 
     ft = *(PFILETIME)&pEntry->Timestamp; FileTimeToSystemTime(&ft, &st);
     _BytesToHex(pEntry->Data, pEntry->DataLength, wszHex, _countof(wszHex));
@@ -486,14 +529,14 @@ BOOL SendLogEntryToApi(
     utf8Len = WideCharToMultiByte(CP_UTF8, 0, json, -1, utf8Json, sizeof(utf8Json), NULL, NULL);
     if (utf8Len <= 0)
     {
-        pClose(hReq); pClose(hConn); pClose(hSession); FreeLibrary(h);
+        g_pWinHttpCloseHandle(hReq);
         return FALSE;
     }
 
-    ok = pSend(hReq, L"Content-Type: application/json; charset=utf-8\r\n", (DWORD)-1L, (LPVOID)utf8Json, (DWORD)(utf8Len - 1), (DWORD)(utf8Len - 1), 0);
-    if (ok) ok = pRecv(hReq, NULL);
+    ok = g_pWinHttpSendRequest(hReq, L"Content-Type: application/json; charset=utf-8\r\n", (DWORD)-1L, (LPVOID)utf8Json, (DWORD)(utf8Len - 1), (DWORD)(utf8Len - 1), 0);
+    if (ok) ok = g_pWinHttpReceiveResponse(hReq, NULL);
 
-    pClose(hReq); pClose(hConn); pClose(hSession); FreeLibrary(h);
+    g_pWinHttpCloseHandle(hReq);
     return ok;
 }
 
@@ -520,15 +563,21 @@ HandleMonitorParameterMulti(
     BOOL bMonitoringStarted = FALSE;
     DWORD cbReturned;
     HANDLE hPortSniffer = INVALID_HANDLE_VALUE;
+    HANDLE hPortSnifferOv = INVALID_HANDLE_VALUE;
     int iReturnValue = 1;
     unsigned int iPortIdx = 0;
-    BYTE PopResponseBuffer[PORTSNIFFER_PORTLOG_ENTRY_LENGTH];
-    PPORTSNIFFER_POP_PORTLOG_ENTRY_RESPONSE pPopResponse = (PPORTSNIFFER_POP_PORTLOG_ENTRY_RESPONSE)PopResponseBuffer;
+    
+    // Per-port overlapped structures and buffers
+    OVERLAPPED PopOverlapped[MAX_MONITORING_PORTS];
+    HANDLE WaitEvents[MAX_MONITORING_PORTS + 1]; // +1 for the terminate event
+    BOOL bIsPending[MAX_MONITORING_PORTS];
+    BYTE PopResponseBuffer[MAX_MONITORING_PORTS][PORTSNIFFER_PORTLOG_ENTRY_LENGTH];
+    
     PORTSNIFFER_POP_PORTLOG_ENTRY_REQUEST PopRequest[MAX_MONITORING_PORTS];
     PORTSNIFFER_RESET_PORT_MONITORING_REQUEST ResetPortMonitoringRequest[MAX_MONITORING_PORTS];
     WCHAR wszForward[1024];
 
-    if (nPortCount == 0)
+    ZeroMemory(WaitEvents, sizeof(WaitEvents));
     {
         fprintf(stderr, "At least one port must be provided.\n");
         goto Cleanup;
@@ -540,21 +589,26 @@ HandleMonitorParameterMulti(
         goto Cleanup;
     }
 
-    // Check the input parameters and prepare the IOCTL requests.
-    for (iPortIdx = 0; iPortIdx < nPortCount; iPortIdx++)
+    // Parse the monitor types once — the same mask applies to every port.
     {
-        if (wcslen(pwszPorts[iPortIdx]) >= PORTSNIFFER_PORTNAME_LENGTH)
+        USHORT monitorMask;
+        if (!_ParseTypes(pwszTypes, &monitorMask))
         {
-            fprintf(stderr, "Port name is too long: %S\n", pwszPorts[iPortIdx]);
             goto Cleanup;
         }
 
-        StringCchCopyW(PopRequest[iPortIdx].PortName, PORTSNIFFER_PORTNAME_LENGTH, pwszPorts[iPortIdx]);
-        StringCchCopyW(ResetPortMonitoringRequest[iPortIdx].PortName, PORTSNIFFER_PORTNAME_LENGTH, pwszPorts[iPortIdx]);
-
-        if (!_ParseTypes(pwszTypes, &ResetPortMonitoringRequest[iPortIdx].MonitorMask))
+        // Check the input parameters and prepare the IOCTL requests.
+        for (iPortIdx = 0; iPortIdx < nPortCount; iPortIdx++)
         {
-            goto Cleanup;
+            if (wcslen(pwszPorts[iPortIdx]) >= PORTSNIFFER_PORTNAME_LENGTH)
+            {
+                fprintf(stderr, "Port name is too long: %S\n", pwszPorts[iPortIdx]);
+                goto Cleanup;
+            }
+
+            StringCchCopyW(PopRequest[iPortIdx].PortName, PORTSNIFFER_PORTNAME_LENGTH, pwszPorts[iPortIdx]);
+            StringCchCopyW(ResetPortMonitoringRequest[iPortIdx].PortName, PORTSNIFFER_PORTNAME_LENGTH, pwszPorts[iPortIdx]);
+            ResetPortMonitoringRequest[iPortIdx].MonitorMask = monitorMask;
         }
     }
 
@@ -599,6 +653,26 @@ HandleMonitorParameterMulti(
 
     bMonitoringStarted = TRUE;
 
+    // Open overlapped handle specifically for async operations.
+    hPortSnifferOv = CreateFileW(L"\\\\.\\EnlyzePortSniffer", GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, FILE_FLAG_OVERLAPPED, NULL);
+    if (hPortSnifferOv == INVALID_HANDLE_VALUE)
+    {
+        fprintf(stderr, "Could not open Overlapped handle to \"\\\\.\\EnlyzePortSniffer\", last error is %lu.\n", GetLastError());
+        goto Cleanup;
+    }
+
+    // Set up overlapping structs and events
+    WaitEvents[nPortCount] = CreateEvent(NULL, TRUE, FALSE, NULL);
+    g_hTerminateEvent = WaitEvents[nPortCount];
+
+    for (iPortIdx = 0; iPortIdx < nPortCount; iPortIdx++)
+    {
+        WaitEvents[iPortIdx] = CreateEvent(NULL, FALSE, FALSE, NULL); // Auto-reset events
+        ZeroMemory(&PopOverlapped[iPortIdx], sizeof(OVERLAPPED));
+        PopOverlapped[iPortIdx].hEvent = WaitEvents[iPortIdx];
+        bIsPending[iPortIdx] = FALSE;
+    }
+
     // Handle Ctrl+C requests to gracefully stop monitoring.
     if (!SetConsoleCtrlHandler(_CtrlHandlerRoutine, TRUE))
     {
@@ -617,56 +691,89 @@ HandleMonitorParameterMulti(
         TryReadDefaultForwardUrl(wszForward, _countof(wszForward));
     }
 
+    // Connect to the API persistently if a forward URL was found
+    if (wszForward[0] != L'\0')
+    {
+        if (!_InitWinHttp(wszForward))
+        {
+            fprintf(stderr, "Failed to initialize WinHTTP for URL: %S\n", wszForward);
+            // Non-fatal, just monitoring to stdout
+            wszForward[0] = L'\0'; 
+        }
+    }
+
     // Print the table header.
     printf("UTC TIMESTAMP           | PORT | T |  LEN | DATA\n");
 
-    // Fetch new port log entries from our driver until we are terminated.
+    // Fetch new port log entries from our driver utilizing Overlapped IO.
     while (!_bTerminationRequested)
     {
-        unsigned int noMore = 0;
         for (iPortIdx = 0; iPortIdx < nPortCount; iPortIdx++)
         {
-            if (!DeviceIoControl(hPortSniffer,
-                (DWORD)PORTSNIFFER_IOCTL_CONTROL_POP_PORTLOG_ENTRY,
-                &PopRequest[iPortIdx],
-                sizeof(PORTSNIFFER_POP_PORTLOG_ENTRY_REQUEST),
-                PopResponseBuffer,
-                sizeof(PopResponseBuffer),
-                &cbReturned,
-                NULL))
+            if (!bIsPending[iPortIdx])
             {
-                if (GetLastError() == ERROR_NO_MORE_ITEMS)
+                BOOL result = DeviceIoControl(hPortSnifferOv,
+                    (DWORD)PORTSNIFFER_IOCTL_CONTROL_POP_PORTLOG_ENTRY,
+                    &PopRequest[iPortIdx],
+                    sizeof(PORTSNIFFER_POP_PORTLOG_ENTRY_REQUEST),
+                    PopResponseBuffer[iPortIdx],
+                    sizeof(PopResponseBuffer[iPortIdx]),
+                    NULL,
+                    &PopOverlapped[iPortIdx]);
+
+                if (!result)
                 {
-                    noMore++;
-                    continue;
-                }
-                else if (GetLastError() == ERROR_FILE_NOT_FOUND)
-                {
-                    fprintf(stderr, "The PortSniffer Driver is no longer attached to %S!\n", PopRequest[iPortIdx].PortName);
-                    fprintf(stderr, "Please run this tool using the /attach option.\n");
-                    goto Cleanup;
+                    if (GetLastError() == ERROR_IO_PENDING)
+                    {
+                        bIsPending[iPortIdx] = TRUE;
+                    }
+                    else if (GetLastError() == ERROR_FILE_NOT_FOUND)
+                    {
+                        fprintf(stderr, "The PortSniffer Driver is no longer attached to %S!\n", PopRequest[iPortIdx].PortName);
+                        fprintf(stderr, "Please run this tool using the /attach option.\n");
+                        goto Cleanup;
+                    }
+                    else if (GetLastError() != ERROR_NO_MORE_ITEMS)
+                    {
+                        fprintf(stderr, "DeviceIoControl failed for PORTSNIFFER_POP_PORTLOG_ENTRY_REQUEST, last error is %lu.\n", GetLastError());
+                        goto Cleanup;
+                    }
                 }
                 else
                 {
-                    fprintf(stderr, "DeviceIoControl failed for PORTSNIFFER_POP_PORTLOG_ENTRY_REQUEST, last error is %lu.\n", GetLastError());
-                    goto Cleanup;
+                    bIsPending[iPortIdx] = TRUE;
                 }
-            }
-
-            if (!_PrintResponse(pPopResponse, PopRequest[iPortIdx].PortName))
-            {
-                goto Cleanup;
-            }
-
-            if (wszForward[0] != L'\0')
-            {
-                SendLogEntryToApi(wszForward, PopRequest[iPortIdx].PortName, pPopResponse);
             }
         }
 
-        if (noMore == nPortCount)
+        DWORD waitResult = WaitForMultipleObjects(nPortCount + 1, WaitEvents, FALSE, INFINITE);
+        if (waitResult == WAIT_OBJECT_0 + nPortCount)
         {
-            Sleep(10);
+            // Termination event triggered
+            break;
+        }
+        else if (waitResult >= WAIT_OBJECT_0 && waitResult < WAIT_OBJECT_0 + nPortCount)
+        {
+            DWORD finishedPortIdx = waitResult - WAIT_OBJECT_0;
+            DWORD bytesTransferred = 0;
+
+            BOOL result = GetOverlappedResult(hPortSnifferOv, &PopOverlapped[finishedPortIdx], &bytesTransferred, FALSE);
+            bIsPending[finishedPortIdx] = FALSE; // We processed it, mark to reissue
+
+            if (result && bytesTransferred > 0)
+            {
+                PPORTSNIFFER_POP_PORTLOG_ENTRY_RESPONSE pPopResponse = (PPORTSNIFFER_POP_PORTLOG_ENTRY_RESPONSE)PopResponseBuffer[finishedPortIdx];
+                
+                if (!_PrintResponse(pPopResponse, PopRequest[finishedPortIdx].PortName))
+                {
+                    goto Cleanup;
+                }
+
+                if (wszForward[0] != L'\0')
+                {
+                    SendLogEntryToApi(wszForward, PopRequest[finishedPortIdx].PortName, pPopResponse);
+                }
+            }
         }
     }
 
@@ -691,10 +798,26 @@ Cleanup:
         }
     }
 
+    if (hPortSnifferOv != INVALID_HANDLE_VALUE)
+    {
+        CancelIo(hPortSnifferOv);
+        CloseHandle(hPortSnifferOv);
+    }
+    
     if (hPortSniffer != INVALID_HANDLE_VALUE)
     {
         CloseHandle(hPortSniffer);
     }
+
+    for (iPortIdx = 0; iPortIdx <= nPortCount; iPortIdx++)
+    {
+        if (WaitEvents[iPortIdx] != NULL)
+        {
+            CloseHandle(WaitEvents[iPortIdx]);
+        }
+    }
+
+    _CleanupWinHttp();
 
     return iReturnValue;
 }

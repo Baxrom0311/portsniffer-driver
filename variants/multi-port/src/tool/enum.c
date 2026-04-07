@@ -67,6 +67,10 @@ EnumMonitorablePorts(
                 continue;
             }
 
+            // RegQueryValueExW does not guarantee NUL termination — force it
+            // so subsequent wcscmp/wprintf calls stay inside the buffer.
+            wszPortName[_countof(wszPortName) - 1] = L'\0';
+
             // Shall we filter per port name?
             if (pwszPortNameToFind)
             {

@@ -15,6 +15,7 @@ typedef struct _FLAG_TRANSLATION
 FLAG_TRANSLATION;
 
 static BOOL _bTerminationRequested = FALSE;
+static HANDLE g_hTerminateEvent = NULL;
 
 
 static BOOL WINAPI
@@ -25,6 +26,10 @@ _CtrlHandlerRoutine(
     UNREFERENCED_PARAMETER(dwCtrlType);
 
     _bTerminationRequested = TRUE;
+    if (g_hTerminateEvent)
+    {
+        SetEvent(g_hTerminateEvent);
+    }
     return TRUE;
 }
 
@@ -506,12 +511,19 @@ HandleMonitorParameter(
     BOOL bMonitoringStarted = FALSE;
     DWORD cbReturned;
     HANDLE hPortSniffer = INVALID_HANDLE_VALUE;
+    HANDLE hPortSnifferOv = INVALID_HANDLE_VALUE;
     int iReturnValue = 1;
+
+    OVERLAPPED PopOverlapped;
+    HANDLE WaitEvents[2];
+
     BYTE PopResponseBuffer[PORTSNIFFER_PORTLOG_ENTRY_LENGTH];
     PPORTSNIFFER_POP_PORTLOG_ENTRY_RESPONSE pPopResponse = (PPORTSNIFFER_POP_PORTLOG_ENTRY_RESPONSE)PopResponseBuffer;
     PORTSNIFFER_POP_PORTLOG_ENTRY_REQUEST PopRequest;
     PORTSNIFFER_RESET_PORT_MONITORING_REQUEST ResetPortMonitoringRequest;
     WCHAR wszForward[1024];
+    
+    ZeroMemory(&PopOverlapped, sizeof(PopOverlapped));
 
     // Check the input parameters and prepare the IOCTL requests.
     if (wcslen(pwszPort) >= PORTSNIFFER_PORTNAME_LENGTH)
@@ -532,6 +544,13 @@ HandleMonitorParameter(
     hPortSniffer = OpenPortSniffer();
     if (hPortSniffer == INVALID_HANDLE_VALUE)
     {
+        goto Cleanup;
+    }
+    
+    hPortSnifferOv = CreateFileW(L"\\\\.\\EnlyzePortSniffer", GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, FILE_FLAG_OVERLAPPED, NULL);
+    if (hPortSnifferOv == INVALID_HANDLE_VALUE)
+    {
+        fprintf(stderr, "Could not open Overlapped port sniffer handle, last error is %lu.\n", GetLastError());
         goto Cleanup;
     }
 
@@ -567,6 +586,7 @@ HandleMonitorParameter(
     bMonitoringStarted = TRUE;
 
     // Handle Ctrl+C requests to gracefully stop monitoring.
+    g_hTerminateEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
     if (!SetConsoleCtrlHandler(_CtrlHandlerRoutine, TRUE))
     {
         fprintf(stderr, "SetConsoleCtrlHandler failed, last error is %lu.\n", GetLastError());
@@ -584,27 +604,64 @@ HandleMonitorParameter(
         TryReadDefaultForwardUrl(wszForward, _countof(wszForward));
     }
 
+    // Initialize Overlapped structure
+    PopOverlapped.hEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
+    WaitEvents[0] = PopOverlapped.hEvent;
+    WaitEvents[1] = g_hTerminateEvent;
+
     // Print the table header.
     printf("UTC TIMESTAMP           | T |  LEN | DATA\n");
 
     // Fetch new port log entries from our driver until we are terminated.
     while (!_bTerminationRequested)
     {
-        if (!DeviceIoControl(hPortSniffer,
+        BOOL bSuccess = DeviceIoControl(hPortSnifferOv,
             (DWORD)PORTSNIFFER_IOCTL_CONTROL_POP_PORTLOG_ENTRY,
             &PopRequest,
             sizeof(PORTSNIFFER_POP_PORTLOG_ENTRY_REQUEST),
             PopResponseBuffer,
             sizeof(PopResponseBuffer),
-            &cbReturned,
-            NULL))
+            NULL,
+            &PopOverlapped);
+
+        if (!bSuccess)
         {
-            if (GetLastError() == ERROR_NO_MORE_ITEMS)
+            DWORD dwError = GetLastError();
+            if (dwError == ERROR_IO_PENDING)
             {
-                Sleep(10);
-                continue;
+                DWORD waitResult = WaitForMultipleObjects(2, WaitEvents, FALSE, INFINITE);
+                if (waitResult == WAIT_OBJECT_0 + 1)
+                {
+                    // Termination requested
+                    CancelIo(hPortSnifferOv);
+                    break;
+                }
+                else if (waitResult == WAIT_OBJECT_0)
+                {
+                    if (!GetOverlappedResult(hPortSnifferOv, &PopOverlapped, &cbReturned, FALSE))
+                    {
+                        dwError = GetLastError();
+                        if (dwError == ERROR_FILE_NOT_FOUND)
+                        {
+                            fprintf(stderr, "The PortSniffer Driver is no longer attached to %S!\n", pwszPort);
+                            fprintf(stderr, "Please run this tool using the /attach option.\n");
+                            goto Cleanup;
+                        }
+                        if (dwError != ERROR_OPERATION_ABORTED && dwError != ERROR_CANCELLED)
+                        {
+                            fprintf(stderr, "GetOverlappedResult failed, last error is %lu.\n", dwError);
+                            goto Cleanup;
+                        }
+                        continue;
+                    }
+                }
+                else
+                {
+                    fprintf(stderr, "WaitForMultipleObjects failed, waitResult=%lu, last error is %lu.\n", waitResult, GetLastError());
+                    goto Cleanup;
+                }
             }
-            else if (GetLastError() == ERROR_FILE_NOT_FOUND)
+            else if (dwError == ERROR_FILE_NOT_FOUND)
             {
                 fprintf(stderr, "The PortSniffer Driver is no longer attached to %S!\n", pwszPort);
                 fprintf(stderr, "Please run this tool using the /attach option.\n");
@@ -612,19 +669,25 @@ HandleMonitorParameter(
             }
             else
             {
-                fprintf(stderr, "DeviceIoControl failed for PORTSNIFFER_POP_PORTLOG_ENTRY_REQUEST, last error is %lu.\n", GetLastError());
+                fprintf(stderr, "DeviceIoControl failed for PORTSNIFFER_POP_PORTLOG_ENTRY_REQUEST, last error is %lu.\n", dwError);
                 goto Cleanup;
             }
         }
+        
+        // Reset the event for the next iteration
+        ResetEvent(PopOverlapped.hEvent);
 
-        if (!_PrintResponse(pPopResponse))
+        if (!_bTerminationRequested)
         {
-            goto Cleanup;
-        }
+            if (!_PrintResponse(pPopResponse))
+            {
+                goto Cleanup;
+            }
 
-        if (wszForward[0] != L'\0')
-        {
-            SendLogEntryToApi(wszForward, pwszPort, pPopResponse);
+            if (wszForward[0] != L'\0')
+            {
+                SendLogEntryToApi(wszForward, pwszPort, pPopResponse);
+            }
         }
     }
 
@@ -645,10 +708,26 @@ Cleanup:
             &cbReturned,
             NULL);
     }
+    
+    if (PopOverlapped.hEvent != NULL)
+    {
+        CloseHandle(PopOverlapped.hEvent);
+    }
+
+    if (g_hTerminateEvent != NULL)
+    {
+        CloseHandle(g_hTerminateEvent);
+        g_hTerminateEvent = NULL;
+    }
 
     if (hPortSniffer != INVALID_HANDLE_VALUE)
     {
         CloseHandle(hPortSniffer);
+    }
+    
+    if (hPortSnifferOv != INVALID_HANDLE_VALUE)
+    {
+        CloseHandle(hPortSnifferOv);
     }
 
     return iReturnValue;

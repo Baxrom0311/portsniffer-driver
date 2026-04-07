@@ -144,7 +144,8 @@ static int
 _UnsetUpperFilters(
     __in PCWSTR pwszPortName,
     __in HDEVINFO hDevInfo,
-    __in PSP_DEVINFO_DATA DeviceInfoData
+    __in PSP_DEVINFO_DATA DeviceInfoData,
+    __out PBOOL pbChanged
     )
 {
     DWORD cbRequired;
@@ -154,6 +155,8 @@ _UnsetUpperFilters(
     PWSTR pwszCurrent;
     PWSTR pwszRemaining;
     PWSTR pwszUpperFilters = NULL;
+
+    *pbChanged = FALSE;
 
     // Check how many bytes we need for reading the UpperFilters REG_MULTI_SZ string.
     SetupDiGetDeviceRegistryPropertyW(hDevInfo, DeviceInfoData, SPDRP_UPPERFILTERS, NULL, NULL, 0, &cbRequired);
@@ -192,10 +195,12 @@ _UnsetUpperFilters(
         if (_wcsicmp(pwszCurrent, _wszFilterName) == 0)
         {
             // We are part of UpperFilters. Overwrite us with the remaining data.
+            // NOTE: cbRequired is in BYTES, so use byte-level pointer arithmetic.
+            PBYTE pbBufferEnd = (PBYTE)pwszUpperFilters + cbRequired;
             pwszRemaining = pwszCurrent + wcslen(pwszCurrent) + 1;
-            cbRemaining = (DWORD)(&pwszUpperFilters[cbRequired] - pwszRemaining);
+            cbRemaining = (DWORD)(pbBufferEnd - (PBYTE)pwszRemaining);
             MoveMemory(pwszCurrent, pwszRemaining, cbRemaining);
-            cbRequired = (DWORD)(&pwszCurrent[cbRemaining] - pwszUpperFilters);
+            cbRequired = (DWORD)((PBYTE)pwszCurrent + cbRemaining - (PBYTE)pwszUpperFilters);
 
             // Set the new UpperFilters value.
             if (!SetupDiSetDeviceRegistryPropertyW(hDevInfo,
@@ -209,6 +214,7 @@ _UnsetUpperFilters(
             }
 
             printf("The PortSniffer Driver has been successfully detached from %S.\n", pwszPortName);
+            *pbChanged = TRUE;
             iReturnValue = 0;
             goto Cleanup;
         }
@@ -318,15 +324,22 @@ DetachPortCallback(
     __in PSP_DEVINFO_DATA DeviceInfoData
     )
 {
+    BOOL bChanged = FALSE;
     int iReturnValue;
 
-    iReturnValue = _UnsetUpperFilters(pwszPortName, hDevInfo, DeviceInfoData);
+    iReturnValue = _UnsetUpperFilters(pwszPortName, hDevInfo, DeviceInfoData, &bChanged);
     if (iReturnValue != 0)
     {
         return iReturnValue;
     }
 
-    return _RestartDevice(hDevInfo, DeviceInfoData);
+    // Only restart the device if we actually changed the UpperFilters.
+    if (bChanged)
+    {
+        return _RestartDevice(hDevInfo, DeviceInfoData);
+    }
+
+    return 0;
 }
 
 PPORTSNIFFER_GET_ATTACHED_PORTS_RESPONSE
@@ -462,14 +475,6 @@ HandleDetachParameter(
     }
 
     return iReturnValue;
-}
-
-static int _AttachAllCb(__in PCWSTR pwszPortName, __in HDEVINFO hDevInfo, __in PSP_DEVINFO_DATA DeviceInfoData)
-{
-    UNREFERENCED_PARAMETER(hDevInfo);
-    UNREFERENCED_PARAMETER(DeviceInfoData);
-    wprintf(L"Attaching %s...\n", pwszPortName);
-    return AttachPortCallback(pwszPortName, hDevInfo, DeviceInfoData);
 }
 
 int HandleAttachAllParameter(void)

@@ -23,7 +23,7 @@
 #pragma alloc_text (PAGE, PortSnifferFilterEvtIoDeviceControl)
 #pragma alloc_text (PAGE, PortSnifferFilterEvtIoDeviceControlInternal)
 #pragma alloc_text (PAGE, PortSnifferFilterEvtIoRead)
-#pragma alloc_text (PAGE, PortSnifferFilterEvtIoReadCompletionWorkItem)
+#pragma alloc_text (PAGE, PortSnifferFilterEvtReadLogQueueIoRead)
 #pragma alloc_text (PAGE, PortSnifferFilterEvtIoWrite)
 #endif
 
@@ -371,6 +371,39 @@ PortSnifferControlPopPortLogEntry(
         if (RtlCompareUnicodeString(&filterContext->PortName, &unicodePortName, FALSE) == 0)
         {
             status = PortSnifferControlPopPortLogEntryInternal(filterContext, response, &responseLength);
+            
+            if (status == STATUS_NO_MORE_ENTRIES)
+            {
+                // No logs currently available. Park the request so it can be completed as soon as a log arrives.
+                WdfWaitLockAcquire(filterContext->LogEntryLock, NULL);
+                if (filterContext->LogEntryCount == 0 && filterContext->PendingPopRequest == NULL)
+                {
+                    status = WdfRequestMarkCancelableEx(Request, PortSnifferEvtPendingPopRequestCancel);
+                    if (NT_SUCCESS(status))
+                    {
+                        filterContext->PendingPopRequest = Request;
+                        status = STATUS_PENDING;
+                    }
+                    else
+                    {
+                        // Request is already cancelled
+                        status = STATUS_CANCELLED;
+                    }
+                }
+                else if (filterContext->PendingPopRequest != NULL)
+                {
+                    // There's already a pending request for this port. This shouldn't happen with well-behaved clients.
+                    status = STATUS_DEVICE_BUSY;
+                }
+                else
+                {
+                    // A log arrived right after we checked but before we seized the lock! Let's pop it now.
+                    WdfWaitLockRelease(filterContext->LogEntryLock);
+                    status = PortSnifferControlPopPortLogEntryInternal(filterContext, response, &responseLength);
+                    break;
+                }
+                WdfWaitLockRelease(filterContext->LogEntryLock);
+            }
             break;
         }
     }
@@ -497,6 +530,10 @@ PortSnifferFilterAddPortLogEntry(
     PPORTLOG_ENTRY entry;
     WDFMEMORY entryMemory;
     NTSTATUS status;
+    NTSTATUS outStatus = STATUS_SUCCESS;
+    WDFREQUEST requestToComplete = NULL;
+    ULONG_PTR requestToCompleteLength = 0;
+    NTSTATUS requestToCompleteStatus = STATUS_SUCCESS;
 
     PAGED_CODE();
     KdPrint(("PortSnifferFilterAddPortLogEntry(%p, %x, %p, %Iu)\n", FilterContext, Type, Data, DataLength));
@@ -547,8 +584,95 @@ PortSnifferFilterAddPortLogEntry(
     FilterContext->LogEntryTail = entry;
     FilterContext->LogEntryCount++;
 
+    // Satisfy a pending uncancelled pop request if there is one.
+    if (FilterContext->PendingPopRequest != NULL)
+    {
+        WDFREQUEST pendingRequest = FilterContext->PendingPopRequest;
+        NTSTATUS unmarkStatus;
+        
+        // Try to unmark cancelable. If it returns STATUS_CANCELLED, the cancellation
+        // routine is already running or will run, so we must not complete the request ourselves.
+        unmarkStatus = WdfRequestUnmarkCancelable(pendingRequest);
+        if (unmarkStatus != STATUS_CANCELLED)
+        {
+            // We successfully revoked cancellation, meaning we now OWN completing this request.
+            PPORTSNIFFER_POP_PORTLOG_ENTRY_RESPONSE outResponse;
+            ULONG_PTR outLength = 0;
+            
+            FilterContext->PendingPopRequest = NULL; // We are processing it
+            
+            // Pop the entry we just inserted!
+            // Wait, we DO NOT call PortSnifferControlPopPortLogEntryInternal because we hold the LogEntryLock!
+            // We just do the extraction manually since we are under the lock.
+            outStatus = WdfRequestRetrieveOutputBuffer(pendingRequest, PORTSNIFFER_PORTLOG_ENTRY_LENGTH, &outResponse, NULL);
+            if (NT_SUCCESS(outStatus))
+            {
+                PPORTLOG_ENTRY popEntry = FilterContext->LogEntryHead;
+                outLength = FIELD_OFFSET(PORTSNIFFER_POP_PORTLOG_ENTRY_RESPONSE, Data) + popEntry->Response.DataLength;
+                RtlCopyMemory(outResponse, &popEntry->Response, outLength);
+
+                if (FilterContext->LogEntryTail == popEntry)
+                {
+                    FilterContext->LogEntryTail = NULL;
+                }
+                FilterContext->LogEntryHead = popEntry->Next;
+                FilterContext->LogEntryCount--;
+                WdfObjectDelete(popEntry->Memory);
+            }
+            
+            // We must complete the request OUTSIDE of the spin/wait lock.
+            requestToComplete = pendingRequest;
+            requestToCompleteLength = outLength;
+            requestToCompleteStatus = outStatus;
+        }
+    }
+
 Cleanup:
     WdfWaitLockRelease(FilterContext->LogEntryLock);
+
+    if (requestToComplete != NULL)
+    {
+        WdfRequestCompleteWithInformation(requestToComplete, requestToCompleteStatus, requestToCompleteLength);
+    }
+}
+
+__drv_requiresIRQL(PASSIVE_LEVEL)
+void
+PortSnifferEvtPendingPopRequestCancel(
+    __in WDFREQUEST Request
+    )
+{
+    // The request was cancelled by the user. We must remove it from PendingPopRequest and complete it.
+    // However, we don't naturally know WHICH FilterContext owns this request!
+    // But we CAN find out by searching all filter devices.
+    ULONG count;
+    WDFDEVICE device;
+    PFILTER_CONTEXT filterContext;
+    ULONG i;
+
+    // We don't PAGED_CODE() since cancel routines can run at DISPATCH_LEVEL in some cases,
+    // though WDF wait locks require PASSIVE_LEVEL. Wait locks are OK here since we created the 
+    // driver with ExecutionLevelPassive.
+    WdfWaitLockAcquire(FilterDevicesLock, NULL);
+    count = WdfCollectionGetCount(FilterDevices);
+
+    for (i = 0; i < count; i++)
+    {
+        device = WdfCollectionGetItem(FilterDevices, i);
+        filterContext = GetFilterContext(device);
+        
+        WdfWaitLockAcquire(filterContext->LogEntryLock, NULL);
+        if (filterContext->PendingPopRequest == Request)
+        {
+            filterContext->PendingPopRequest = NULL;
+            WdfWaitLockRelease(filterContext->LogEntryLock);
+            break;
+        }
+        WdfWaitLockRelease(filterContext->LogEntryLock);
+    }
+    WdfWaitLockRelease(FilterDevicesLock);
+
+    WdfRequestComplete(Request, STATUS_CANCELLED);
 }
 
 __drv_requiresIRQL(PASSIVE_LEVEL)
@@ -600,8 +724,8 @@ PortSnifferFilterEvtDeviceAdd(
     WDF_OBJECT_ATTRIBUTES logEntryLockAttributes;
     WDFSTRING portNameValueData;
     WDF_OBJECT_ATTRIBUTES portNameValueDataAttributes;
-    WDF_OBJECT_ATTRIBUTES readWorkItemAttributes;
-    WDF_WORKITEM_CONFIG readWorkItemConfig;
+    WDF_IO_QUEUE_CONFIG readLogQueueConfig;
+    WDF_OBJECT_ATTRIBUTES readLogQueueAttributes;
     WDFKEY regKey = WDF_NO_HANDLE;
     NTSTATUS status;
 
@@ -656,23 +780,14 @@ PortSnifferFilterEvtDeviceAdd(
         goto Cleanup;
     }
 
-    // Initialize a Work Item for adding port log read entries at IRQL == PASSIVE_LEVEL.
-    WDF_WORKITEM_CONFIG_INIT(&readWorkItemConfig, PortSnifferFilterEvtIoReadCompletionWorkItem);
-    WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE(&readWorkItemAttributes, READ_WORK_ITEM_CONTEXT);
-    readWorkItemAttributes.ParentObject = device;
-    status = WdfWorkItemCreate(&readWorkItemConfig, &readWorkItemAttributes, &filterContext->ReadWorkItem);
-    if (!NT_SUCCESS(status))
-    {
-        KdPrint(("WdfWorkItemCreate failed, status = 0x%08lX\n", status));
-        goto Cleanup;
-    }
-
     // Initialize the remaining context fields.
     filterContext->MonitorMask = PORTSNIFFER_MONITOR_NONE;
+    filterContext->InFilterDevicesCollection = FALSE;
 
     filterContext->LogEntryHead = NULL;
     filterContext->LogEntryTail = NULL;
     filterContext->LogEntryCount = 0;
+    filterContext->PendingPopRequest = NULL;
 
     WDF_OBJECT_ATTRIBUTES_INIT(&logEntryLockAttributes);
     logEntryLockAttributes.ParentObject = device;
@@ -701,28 +816,54 @@ PortSnifferFilterEvtDeviceAdd(
         goto Cleanup;
     }
 
-    // Add it to the collection of all our active filter devices.
-    WdfWaitLockAcquire(FilterDevicesLock, NULL);
-    status = WdfCollectionAdd(FilterDevices, device);
-    count = WdfCollectionGetCount(FilterDevices);
-    WdfWaitLockRelease(FilterDevicesLock);
+    // Create a manual-dispatch queue where completed read requests are forwarded.
+    // This queue runs at PASSIVE_LEVEL and handles every completed read with its
+    // own per-request context, eliminating the shared work-item race.
+    WDF_IO_QUEUE_CONFIG_INIT(&readLogQueueConfig, WdfIoQueueDispatchManual);
+    readLogQueueConfig.EvtIoRead = PortSnifferFilterEvtReadLogQueueIoRead;
+
+    WDF_OBJECT_ATTRIBUTES_INIT(&readLogQueueAttributes);
+    readLogQueueAttributes.ExecutionLevel = WdfExecutionLevelPassive;
+    readLogQueueAttributes.ParentObject = device;
+
+    status = WdfIoQueueCreate(device, &readLogQueueConfig, &readLogQueueAttributes, &filterContext->ReadLogQueue);
     if (!NT_SUCCESS(status))
     {
+        KdPrint(("WdfIoQueueCreate (ReadLogQueue) failed, status = 0x%08lX\n", status));
+        goto Cleanup;
+    }
+
+    // Add this device to the collection and, if it is the first one, create the
+    // control device. Both steps must be done under the same lock so
+    // EvtDeviceCleanup observes a consistent view.
+    WdfWaitLockAcquire(FilterDevicesLock, NULL);
+    status = WdfCollectionAdd(FilterDevices, device);
+    if (!NT_SUCCESS(status))
+    {
+        WdfWaitLockRelease(FilterDevicesLock);
         KdPrint(("WdfCollectionAdd failed, status = 0x%08lX\n", status));
         goto Cleanup;
     }
 
-    // Create our control device if this is the first port.
+    filterContext->InFilterDevicesCollection = TRUE;
+    count = WdfCollectionGetCount(FilterDevices);
+
     if (count == 1)
     {
         status = PortSnifferControlCreate(Driver);
         if (!NT_SUCCESS(status))
         {
+            // Roll back the collection add so EvtDeviceCleanup does not try to
+            // delete a NULL ControlDevice.
+            WdfCollectionRemove(FilterDevices, device);
+            filterContext->InFilterDevicesCollection = FALSE;
+            WdfWaitLockRelease(FilterDevicesLock);
             KdPrint(("PortSnifferControlCreate failed, status = 0x%08lX\n", status));
             goto Cleanup;
         }
     }
 
+    WdfWaitLockRelease(FilterDevicesLock);
     status = STATUS_SUCCESS;
 
 Cleanup:
@@ -739,24 +880,32 @@ PortSnifferFilterEvtDeviceCleanup(
     WDFDEVICE Device
     )
 {
-    ULONG count;
+    PFILTER_CONTEXT filterContext;
 
     PAGED_CODE();
     KdPrint(("PortSnifferFilterEvtDeviceCleanup(%p)\n", Device));
 
-    WdfWaitLockAcquire(FilterDevicesLock, NULL);
-    count = WdfCollectionGetCount(FilterDevices);
+    filterContext = GetFilterContext(Device);
 
-    // Delete our control device if this is the last port.
-    if (count == 1)
+    WdfWaitLockAcquire(FilterDevicesLock, NULL);
+
+    // Only touch the collection if EvtDeviceAdd actually finished adding us.
+    if (filterContext->InFilterDevicesCollection)
     {
-        KdPrint(("Deleting the control device.\n"));
-        WdfObjectDelete(ControlDevice);
-        ControlDevice = NULL;
+        WdfCollectionRemove(FilterDevices, Device);
+        filterContext->InFilterDevicesCollection = FALSE;
+
+        // Delete the control device once the last port has gone away. Guarded
+        // by a NULL check because a prior EvtDeviceAdd may have rolled back
+        // before creating it.
+        if (WdfCollectionGetCount(FilterDevices) == 0 && ControlDevice != NULL)
+        {
+            KdPrint(("Deleting the control device.\n"));
+            WdfObjectDelete(ControlDevice);
+            ControlDevice = NULL;
+        }
     }
 
-    // Delete our filter device from the collection.
-    WdfCollectionRemove(FilterDevices, Device);
     WdfWaitLockRelease(FilterDevicesLock);
 }
 
@@ -934,7 +1083,9 @@ PortSnifferFilterEvtIoReadCompletionRoutine(
     )
 {
     PFILTER_CONTEXT filterContext;
-    PREAD_WORK_ITEM_CONTEXT readWorkItemContext;
+    PREAD_REQUEST_CONTEXT readRequestContext;
+    WDF_OBJECT_ATTRIBUTES readRequestContextAttributes;
+    NTSTATUS status;
 
     UNREFERENCED_PARAMETER(Target);
 
@@ -946,41 +1097,61 @@ PortSnifferFilterEvtIoReadCompletionRoutine(
         return;
     }
 
-    // This is a successfully completed read request, which we want to log.
-    // As Completion Routines always run at IRQL <= DISPATCH_LEVEL, we need to queue a Work Item to ensure IRQL == PASSIVE_LEVEL
-    // and therefore be able to call PortSnifferFilterAddPortLogEntry.
+    // Attach a per-request context holding the info we need at PASSIVE_LEVEL.
+    // Using WdfObjectAllocateContext means every concurrent read carries its
+    // own independent state — no shared work item, no race.
     filterContext = (PFILTER_CONTEXT)Context;
-    readWorkItemContext = GetReadWorkItemContext(filterContext->ReadWorkItem);
-    readWorkItemContext->Request = Request;
-    readWorkItemContext->ReadBuffer = WdfMemoryGetBuffer(Params->Parameters.Read.Buffer, NULL);
-    readWorkItemContext->BytesRead = Params->Parameters.Read.Length;
-    readWorkItemContext->FilterContext = filterContext;
 
-    WdfWorkItemEnqueue(filterContext->ReadWorkItem);
+    WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE(&readRequestContextAttributes, READ_REQUEST_CONTEXT);
+    status = WdfObjectAllocateContext(Request, &readRequestContextAttributes, &readRequestContext);
+    if (!NT_SUCCESS(status))
+    {
+        KdPrint(("WdfObjectAllocateContext failed, status = 0x%08lX\n", status));
+        WdfRequestComplete(Request, STATUS_SUCCESS);
+        return;
+    }
+
+    readRequestContext->ReadBuffer = WdfMemoryGetBuffer(Params->Parameters.Read.Buffer, NULL);
+    readRequestContext->BytesRead = Params->Parameters.Read.Length;
+    readRequestContext->FilterContext = filterContext;
+
+    // Forward to the manual-dispatch queue which runs at PASSIVE_LEVEL.
+    // WdfRequestForwardToIoQueue is legal at IRQL <= DISPATCH_LEVEL.
+    status = WdfRequestForwardToIoQueue(Request, filterContext->ReadLogQueue);
+    if (!NT_SUCCESS(status))
+    {
+        KdPrint(("WdfRequestForwardToIoQueue failed, status = 0x%08lX\n", status));
+        WdfRequestComplete(Request, STATUS_SUCCESS);
+    }
 }
 
-__drv_functionClass(EVT_WDF_WORKITEM)
+__drv_functionClass(EVT_WDF_IO_QUEUE_IO_READ)
 __drv_sameIRQL
 __drv_maxIRQL(PASSIVE_LEVEL)
 void
-PortSnifferFilterEvtIoReadCompletionWorkItem(
-    __in WDFWORKITEM WorkItem
+PortSnifferFilterEvtReadLogQueueIoRead(
+    __in WDFQUEUE Queue,
+    __in WDFREQUEST Request,
+    __in size_t Length
     )
 {
-    PREAD_WORK_ITEM_CONTEXT readWorkItemContext;
+    PREAD_REQUEST_CONTEXT readRequestContext;
+
+    UNREFERENCED_PARAMETER(Queue);
+    UNREFERENCED_PARAMETER(Length);
 
     PAGED_CODE();
-    KdPrint(("PortSnifferFilterEvtIoReadCompletionWorkItem(%p)\n", WorkItem));
+    KdPrint(("PortSnifferFilterEvtReadLogQueueIoRead(%p, %p, %Iu)\n", Queue, Request, Length));
 
-    // Now that we are running at IRQL == PASSIVE_LEVEL, log the read request and finally complete it.
-    readWorkItemContext = GetReadWorkItemContext(WorkItem);
-    PortSnifferFilterAddPortLogEntry(readWorkItemContext->FilterContext,
+    // Running at PASSIVE_LEVEL now — safe to touch paged pool / acquire wait locks.
+    readRequestContext = GetReadRequestContext(Request);
+    PortSnifferFilterAddPortLogEntry(readRequestContext->FilterContext,
         PORTSNIFFER_MONITOR_READ,
-        readWorkItemContext->ReadBuffer,
-        readWorkItemContext->BytesRead
+        readRequestContext->ReadBuffer,
+        readRequestContext->BytesRead
     );
 
-    WdfRequestComplete(readWorkItemContext->Request, STATUS_SUCCESS);
+    WdfRequestComplete(Request, STATUS_SUCCESS);
 }
 
 __drv_functionClass(EVT_WDF_IO_QUEUE_IO_WRITE)
