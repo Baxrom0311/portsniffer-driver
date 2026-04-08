@@ -26,11 +26,11 @@ cd src
 cd driver
 rd /s /q %OBJ_DIR%
 build
-copy %OBJ_DIR%\EnlyzePortSniffer.sys ..\..\%REDIST_DIR%
+copy %OBJ_DIR%\EnlyzePortSniffer.sys ..\..\%REDIST_DIR%\EnlyzePortSniffer2.sys
 cd ..
 
 cd tool
 rd /s /q %OBJ_DIR%
 build
-copy %OBJ_DIR%\PortSniffer-Tool.exe ..\..\%REDIST_DIR%
+copy %OBJ_DIR%\PortSniffer-Tool.exe ..\..\%REDIST_DIR%\PortSniffer-Tool2.exe
 cd ..

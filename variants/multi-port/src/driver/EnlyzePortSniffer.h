@@ -14,8 +14,8 @@
 #include "../version.h"
 
 
-#define CONTROL_DEVICE_NAME_STRING          L"\\Device\\EnlyzePortSniffer"
-#define CONTROL_SYMBOLIC_LINK_NAME_STRING   L"\\DosDevices\\EnlyzePortSniffer"
+#define CONTROL_DEVICE_NAME_STRING          L"\\Device\\EnlyzePortSniffer2"
+#define CONTROL_SYMBOLIC_LINK_NAME_STRING   L"\\DosDevices\\EnlyzePortSniffer2"
 #define POOL_TAG                            (ULONG)'nSoP'
 
 // The worst case is a serial port at 115200 baud, which is read via 1-byte requests.

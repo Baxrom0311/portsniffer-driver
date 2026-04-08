@@ -15,16 +15,16 @@ typedef ULONG (*WDFPOSTDEVICEREMOVE)(LPCWSTR InfPath, LPCWSTR InfSectionName);
 static const char _szInfContent[] =
     "[Version]\n"
     "Signature = \"$Windows NT$\"\n"
-    "[EnlyzePortSniffer.NT.Wdf]\n"
-    "KmdfService = EnlyzePortSniffer, EnlyzePortSniffer_Service_kmdfInst\n"
-    "[EnlyzePortSniffer_Service_kmdfInst]\n"
+    "[EnlyzePortSniffer2.NT.Wdf]\n"
+    "KmdfService = EnlyzePortSniffer2, EnlyzePortSniffer2_Service_kmdfInst\n"
+    "[EnlyzePortSniffer2_Service_kmdfInst]\n"
     "KmdfLibraryVersion = 1.9";
 static const WCHAR _wszCoInstallerFile[] = L"\\WdfCoInstaller01009.dll";
-static const WCHAR _wszDriverDestinationPath[] = L"%SystemRoot%\\system32\\drivers\\EnlyzePortSniffer.sys";
-static const WCHAR _wszDriverFile[] = L"\\EnlyzePortSniffer.sys";
-static const WCHAR _wszInfFile[] = L"\\EnlyzePortSniffer.inf";
-static const WCHAR _wszInfSectionName[] = L"EnlyzePortSniffer.NT.Wdf";
-static const WCHAR _wszServiceName[] = L"EnlyzePortSniffer";
+static const WCHAR _wszDriverDestinationPath[] = L"%SystemRoot%\\system32\\drivers\\EnlyzePortSniffer2.sys";
+static const WCHAR _wszDriverFile[] = L"\\EnlyzePortSniffer2.sys";
+static const WCHAR _wszInfFile[] = L"\\EnlyzePortSniffer2.inf";
+static const WCHAR _wszInfSectionName[] = L"EnlyzePortSniffer2.NT.Wdf";
+static const WCHAR _wszServiceName[] = L"EnlyzePortSniffer2";
 
 
 static BOOL

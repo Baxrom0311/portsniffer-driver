@@ -64,10 +64,10 @@ OpenPortSniffer(void)
 {
     HANDLE hPortSniffer;
 
-    hPortSniffer = CreateFileW(L"\\\\.\\EnlyzePortSniffer", GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, 0, NULL);
+    hPortSniffer = CreateFileW(L"\\\\.\\EnlyzePortSniffer2", GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, 0, NULL);
     if (hPortSniffer == INVALID_HANDLE_VALUE)
     {
-        fprintf(stderr, "Could not open \"\\\\.\\EnlyzePortSniffer\", last error is %lu.\n", GetLastError());
+        fprintf(stderr, "Could not open \"\\\\.\\EnlyzePortSniffer2\", last error is %lu.\n", GetLastError());
         fprintf(stderr, "This can have various reasons:\n");
         fprintf(stderr, "- The PortSniffer Driver is not installed\n");
         fprintf(stderr, "- The PortSniffer Driver is not attached to any port\n");
