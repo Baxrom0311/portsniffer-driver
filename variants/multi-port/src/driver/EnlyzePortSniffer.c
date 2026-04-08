@@ -57,15 +57,10 @@ DriverEntry(
         return status;
     }
 
-    // Create our control device.
-    status = PortSnifferControlCreate(driver);
-    if (!NT_SUCCESS(status))
-    {
-        KdPrint(("PortSnifferControlCreate failed, status = 0x%08lX\n", status));
-        return status;
-    }
-
     // Maintain a collection of all active port filter devices.
+    // This MUST be created before the control device, otherwise an IOCTL that
+    // arrives between PortSnifferControlCreate and WdfWaitLockCreate would
+    // dereference a NULL FilterDevicesLock.
     status = WdfCollectionCreate(WDF_NO_OBJECT_ATTRIBUTES, &FilterDevices);
     if (!NT_SUCCESS(status))
     {
@@ -83,7 +78,7 @@ DriverEntry(
 
     // Create a lookaside list to serve all memory requests for port log entries.
     status = WdfLookasideListCreate(WDF_NO_OBJECT_ATTRIBUTES,
-        PORTSNIFFER_PORTLOG_ENTRY_LENGTH,
+        sizeof(PORTLOG_ENTRY) + PORTSNIFFER_PORTLOG_ENTRY_LENGTH,
         PagedPool,
         WDF_NO_OBJECT_ATTRIBUTES,
         POOL_TAG,
@@ -91,6 +86,15 @@ DriverEntry(
     if (!NT_SUCCESS(status))
     {
         KdPrint(("WdfLookasideListCreate failed, status = 0x%08lX\n", status));
+        return status;
+    }
+
+    // Create our control device once all global state is ready. The control
+    // device persists for the lifetime of the driver in the multi-port variant.
+    status = PortSnifferControlCreate(driver);
+    if (!NT_SUCCESS(status))
+    {
+        KdPrint(("PortSnifferControlCreate failed, status = 0x%08lX\n", status));
         return status;
     }
 
@@ -133,8 +137,11 @@ PortSnifferControlCreate(
         goto Cleanup;
     }
 
-    // For now, we only want a single application to simultaneously access the control device (no concurrency).
-    WdfDeviceInitSetExclusive(deviceInit, TRUE);
+    // The control device is intentionally NOT exclusive: the PortSniffer-Tool
+    // monitoring path opens two handles (synchronous + overlapped) so it can
+    // both park a pop request and issue control IOCTLs in parallel. The new
+    // pending-pop design protects against same-port concurrency via a
+    // per-FilterContext PendingPopRequest slot.
 
     // Create our control device.
     WDF_OBJECT_ATTRIBUTES_INIT(&deviceAttributes);
@@ -419,7 +426,14 @@ PortSnifferControlPopPortLogEntry(
     }
 
     WdfWaitLockRelease(FilterDevicesLock);
-    WdfRequestCompleteWithInformation(Request, status, responseLength);
+
+    // If the request was parked as pending, do NOT complete it here — it will
+    // be completed later either by PortSnifferFilterAddPortLogEntry when a log
+    // arrives or by PortSnifferEvtPendingPopRequestCancel on cancellation.
+    if (status != STATUS_PENDING)
+    {
+        WdfRequestCompleteWithInformation(Request, status, responseLength);
+    }
 }
 
 __drv_requiresIRQL(PASSIVE_LEVEL)
@@ -533,9 +547,9 @@ PortSnifferFilterAddPortLogEntry(
     __in size_t DataLength
     )
 {
-    // We always allocate the same PORTSNIFFER_PORTLOG_ENTRY_LENGTH bytes for every log entry.
-    // The actual data may consume everything that's left after the other fields.
-    const USHORT MaxDataLength = PORTSNIFFER_PORTLOG_ENTRY_LENGTH - FIELD_OFFSET(PORTLOG_ENTRY, Response.Data);
+    // We can fit up to PORTSNIFFER_PORTLOG_ENTRY_LENGTH bytes into the response buffer provided by the tool.
+    // The actual data may consume everything that's left after the response header.
+    const USHORT MaxDataLength = PORTSNIFFER_PORTLOG_ENTRY_LENGTH - FIELD_OFFSET(PORTSNIFFER_POP_PORTLOG_ENTRY_RESPONSE, Data);
 
     PPORTLOG_ENTRY entry;
     WDFMEMORY entryMemory;
@@ -729,7 +743,6 @@ PortSnifferFilterEvtDeviceAdd(
 {
     DECLARE_CONST_UNICODE_STRING(portNameValueName, L"PortName");
 
-    ULONG count;
     WDFDEVICE device;
     WDF_OBJECT_ATTRIBUTES deviceAttributes;
     PFILTER_CONTEXT filterContext;
@@ -742,6 +755,9 @@ PortSnifferFilterEvtDeviceAdd(
     WDF_OBJECT_ATTRIBUTES readLogQueueAttributes;
     WDFKEY regKey = WDF_NO_HANDLE;
     NTSTATUS status;
+    UNICODE_STRING tempUnicodeString;
+
+    UNREFERENCED_PARAMETER(Driver);
 
     PAGED_CODE();
     KdPrint(("PortSnifferFilterEvtDeviceAdd(%p, %p)\n", Driver, DeviceInit));
@@ -749,7 +765,7 @@ PortSnifferFilterEvtDeviceAdd(
     // Register us as a filter device.
     WdfFdoInitSetFilter(DeviceInit);
 
-    // Register a callback to clean up the control device for the last port.
+    // Register a callback to remove the device from the FilterDevices collection on teardown.
     WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE(&deviceAttributes, FILTER_CONTEXT);
     deviceAttributes.EvtCleanupCallback = PortSnifferFilterEvtDeviceCleanup;
 
@@ -765,7 +781,7 @@ PortSnifferFilterEvtDeviceAdd(
     status = WdfDeviceOpenRegistryKey(device, PLUGPLAY_REGKEY_DEVICE, KEY_READ, WDF_NO_OBJECT_ATTRIBUTES, &regKey);
     if (!NT_SUCCESS(status))
     {
-        KdPrint(("WdfFdoInitOpenRegistryKey failed, status = 0x%08lX\n", status));
+        KdPrint(("WdfDeviceOpenRegistryKey failed, status = 0x%08lX\n", status));
         goto Cleanup;
     }
 
@@ -778,19 +794,40 @@ PortSnifferFilterEvtDeviceAdd(
         goto Cleanup;
     }
 
+    // Try to get "PortName" first.
     status = WdfRegistryQueryString(regKey, &portNameValueName, portNameValueData);
     if (!NT_SUCCESS(status))
     {
-        KdPrint(("WdfRegistryQueryString failed, status = 0x%08lX\n", status));
+        // Fallback to "FriendlyName" if "PortName" is not found.
+        DECLARE_CONST_UNICODE_STRING(friendlyNameValueName, L"FriendlyName");
+        status = WdfRegistryQueryString(regKey, &friendlyNameValueName, portNameValueData);
+    }
+
+    if (!NT_SUCCESS(status))
+    {
+        KdPrint(("Could not retrieve PortName or FriendlyName, status = 0x%08lX\n", status));
         goto Cleanup;
     }
 
     filterContext = GetFilterContext(device);
-    WdfStringGetUnicodeString(portNameValueData, &filterContext->PortName);
+    filterContext->PortName.Buffer = filterContext->PortNameBuffer;
+    filterContext->PortName.MaximumLength = sizeof(filterContext->PortNameBuffer);
+    filterContext->PortName.Length = 0;
+
+    WdfStringGetUnicodeString(portNameValueData, &tempUnicodeString);
+    RtlCopyUnicodeString(&filterContext->PortName, &tempUnicodeString);
+
+    // Some drivers store the port name with a trailing NUL byte in the registry.
+    // Strip it to avoid comparison failures against NUL-terminated C strings.
+    if (filterContext->PortName.Length >= sizeof(WCHAR) &&
+        filterContext->PortName.Buffer[filterContext->PortName.Length / sizeof(WCHAR) - 1] == L'\0')
+    {
+        filterContext->PortName.Length -= sizeof(WCHAR);
+    }
 
     KdPrint(("PortSniffer attached to %wZ\n", &filterContext->PortName));
 
-    if (filterContext->PortName.Length >= PORTSNIFFER_PORTNAME_LENGTH)
+    if (filterContext->PortName.Length >= PORTSNIFFER_PORTNAME_LENGTH * sizeof(WCHAR))
     {
         KdPrint(("PortName is too long: %wZ\n", &filterContext->PortName));
         status = STATUS_NAME_TOO_LONG;
@@ -850,19 +887,11 @@ PortSnifferFilterEvtDeviceAdd(
         goto Cleanup;
     }
 
-    // Add this device to the collection and, if it is the first one, create the
-    // control device. Both steps must be done under the same lock so
-    // EvtDeviceCleanup observes a consistent view.
+    // Add this device to the collection. The control device already exists
+    // (it was created once at DriverEntry and persists for the lifetime of the
+    // driver in the multi-port variant).
     WdfWaitLockAcquire(FilterDevicesLock, NULL);
     status = WdfCollectionAdd(FilterDevices, device);
-    if (!NT_SUCCESS(status))
-    {
-        KdPrint(("WdfCollectionAdd failed, status = 0x%08lX\n", status));
-    }
-    else
-    {
-        KdPrint(("Device %wZ successfully added to FilterDevices collection\n", &filterContext->PortName));
-    }
     if (!NT_SUCCESS(status))
     {
         WdfWaitLockRelease(FilterDevicesLock);
@@ -870,24 +899,8 @@ PortSnifferFilterEvtDeviceAdd(
         goto Cleanup;
     }
 
+    KdPrint(("Device %wZ successfully added to FilterDevices collection\n", &filterContext->PortName));
     filterContext->InFilterDevicesCollection = TRUE;
-    count = WdfCollectionGetCount(FilterDevices);
-
-    if (count == 1)
-    {
-        status = PortSnifferControlCreate(Driver);
-        if (!NT_SUCCESS(status))
-        {
-            // Roll back the collection add so EvtDeviceCleanup does not try to
-            // delete a NULL ControlDevice.
-            WdfCollectionRemove(FilterDevices, device);
-            filterContext->InFilterDevicesCollection = FALSE;
-            WdfWaitLockRelease(FilterDevicesLock);
-            KdPrint(("PortSnifferControlCreate failed, status = 0x%08lX\n", status));
-            goto Cleanup;
-        }
-    }
-
     WdfWaitLockRelease(FilterDevicesLock);
     status = STATUS_SUCCESS;
 
@@ -915,20 +928,12 @@ PortSnifferFilterEvtDeviceCleanup(
     WdfWaitLockAcquire(FilterDevicesLock, NULL);
 
     // Only touch the collection if EvtDeviceAdd actually finished adding us.
+    // The control device is owned by the driver lifetime and is freed by the
+    // framework on driver unload — we do not delete it here.
     if (filterContext->InFilterDevicesCollection)
     {
         WdfCollectionRemove(FilterDevices, Device);
         filterContext->InFilterDevicesCollection = FALSE;
-
-        // Delete the control device once the last port has gone away. Guarded
-        // by a NULL check because a prior EvtDeviceAdd may have rolled back
-        // before creating it.
-        if (WdfCollectionGetCount(FilterDevices) == 0 && ControlDevice != NULL)
-        {
-            KdPrint(("Deleting the control device.\n"));
-            WdfObjectDelete(ControlDevice);
-            ControlDevice = NULL;
-        }
     }
 
     WdfWaitLockRelease(FilterDevicesLock);

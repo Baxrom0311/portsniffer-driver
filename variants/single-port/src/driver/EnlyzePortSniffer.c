@@ -123,8 +123,11 @@ PortSnifferControlCreate(
         goto Cleanup;
     }
 
-    // For now, we only want a single application to simultaneously access the control device (no concurrency).
-    WdfDeviceInitSetExclusive(deviceInit, TRUE);
+    // The control device is intentionally NOT exclusive: the PortSniffer-Tool
+    // monitoring path opens two handles (synchronous + overlapped) so it can
+    // both park a pop request and issue control IOCTLs in parallel. The new
+    // pending-pop design protects against same-port concurrency via a
+    // per-FilterContext PendingPopRequest slot.
 
     // Create our control device.
     WDF_OBJECT_ATTRIBUTES_INIT(&deviceAttributes);
@@ -409,7 +412,14 @@ PortSnifferControlPopPortLogEntry(
     }
 
     WdfWaitLockRelease(FilterDevicesLock);
-    WdfRequestCompleteWithInformation(Request, status, responseLength);
+
+    // If the request was parked as pending, do NOT complete it here — it will
+    // be completed later either by PortSnifferFilterAddPortLogEntry when a log
+    // arrives or by PortSnifferEvtPendingPopRequestCancel on cancellation.
+    if (status != STATUS_PENDING)
+    {
+        WdfRequestCompleteWithInformation(Request, status, responseLength);
+    }
 }
 
 __drv_requiresIRQL(PASSIVE_LEVEL)

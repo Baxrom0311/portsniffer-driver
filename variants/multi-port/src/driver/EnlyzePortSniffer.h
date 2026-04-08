@@ -38,6 +38,7 @@ PORTLOG_ENTRY, *PPORTLOG_ENTRY;
 typedef struct _FILTER_CONTEXT
 {
     UNICODE_STRING PortName;
+    WCHAR PortNameBuffer[PORTSNIFFER_PORTNAME_LENGTH];
     USHORT MonitorMask;
 
     PPORTLOG_ENTRY LogEntryHead;

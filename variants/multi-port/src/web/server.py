@@ -13,40 +13,49 @@ app = Flask(__name__)
 events = deque(maxlen=1000)
 events_lock = threading.RLock()
 
-# Database Configuration
+# Database Configuration. Override via environment variables in production so
+# credentials are not baked into source.
 DB_CONFIG = {
-    "dbname": "portsniffer_db",
-    "user": "baxrom",
-    "host": "localhost",
-    "port": 5432
+    "dbname": os.environ.get("PORTSNIFFER_DB_NAME", "portsniffer_db"),
+    "user": os.environ.get("PORTSNIFFER_DB_USER", "baxrom"),
+    "password": os.environ.get("PORTSNIFFER_DB_PASSWORD"),
+    "host": os.environ.get("PORTSNIFFER_DB_HOST", "localhost"),
+    "port": int(os.environ.get("PORTSNIFFER_DB_PORT", "5432")),
 }
 
+# Cap the on-disk log retention so the table cannot grow unbounded.
+RETENTION_MAX_ROWS = int(os.environ.get("PORTSNIFFER_RETENTION_ROWS", "1000000"))
+
 def get_db_connection():
-    return psycopg2.connect(**DB_CONFIG)
+    # Strip any None values so libpq falls back to its defaults / .pgpass.
+    cfg = {k: v for k, v in DB_CONFIG.items() if v is not None}
+    return psycopg2.connect(**cfg)
 
 def init_db():
+    conn = None
     try:
         conn = get_db_connection()
-        cur = conn.cursor()
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS port_logs (
-                id SERIAL PRIMARY KEY,
-                port TEXT NOT NULL,
-                timestamp TEXT,
-                type INTEGER,
-                length INTEGER,
-                data_hex TEXT,
-                data_text TEXT,
-                ts_received BIGINT
-            );
-            CREATE INDEX IF NOT EXISTS idx_port_logs_port ON port_logs(port);
-            CREATE INDEX IF NOT EXISTS idx_port_logs_ts ON port_logs(ts_received DESC);
-        """)
-        conn.commit()
-        cur.close()
-        conn.close()
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS port_logs (
+                        id SERIAL PRIMARY KEY,
+                        port TEXT NOT NULL,
+                        timestamp TEXT,
+                        type INTEGER,
+                        length INTEGER,
+                        data_hex TEXT,
+                        data_text TEXT,
+                        ts_received BIGINT
+                    );
+                """)
+                cur.execute("CREATE INDEX IF NOT EXISTS idx_port_logs_port ON port_logs(port);")
+                cur.execute("CREATE INDEX IF NOT EXISTS idx_port_logs_ts ON port_logs(ts_received DESC);")
     except Exception as e:
-        print(f"Error initializing database: {e}")
+        app.logger.error("Error initializing database: %s", e)
+    finally:
+        if conn is not None:
+            conn.close()
 
 # Initialize the database table
 init_db()
@@ -243,32 +252,33 @@ def data():
     q_gap = max(5, min(1000, q_gap))
 
     # Query from Database
+    conn = None
     try:
         conn = get_db_connection()
-        cur = conn.cursor(cursor_factory=RealDictCursor)
-        
-        query = "SELECT port, timestamp, type, length, data_hex, data_text, ts_received FROM port_logs WHERE 1=1"
-        params = []
-        
-        if q_port:
-            query += " AND LOWER(port) = LOWER(%s)"
-            params.append(q_port)
-            
-        if q_type and q_type.isdigit():
-            query += " AND type = %s"
-            params.append(int(q_type))
-            
-        query += " ORDER BY ts_received DESC LIMIT %s"
-        params.append(q_limit)
-        
-        cur.execute(query, params)
-        src = cur.fetchall()
-        cur.close()
-        conn.close()
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            query = "SELECT port, timestamp, type, length, data_hex, data_text, ts_received FROM port_logs WHERE 1=1"
+            params = []
+
+            if q_port:
+                query += " AND LOWER(port) = LOWER(%s)"
+                params.append(q_port)
+
+            if q_type and q_type.isdigit():
+                query += " AND type = %s"
+                params.append(int(q_type))
+
+            query += " ORDER BY ts_received DESC LIMIT %s"
+            params.append(q_limit)
+
+            cur.execute(query, params)
+            src = cur.fetchall()
     except Exception as e:
         app.logger.error("Database query error: %s", e)
         with events_lock:
             src = list(events)
+    finally:
+        if conn is not None:
+            conn.close()
 
     # Chronological processing for combine (DB returns newest first, so reverse to process)
     src.reverse() 
@@ -342,9 +352,9 @@ def _normalize_one(obj: dict):
 
 @app.route("/ingest", methods=["POST"])
 def ingest():
+    conn = None
     try:
         payload = decode_request_payload()
-        objs = []
         if isinstance(payload, list):
             objs = [_normalize_one(obj) for obj in payload if isinstance(obj, dict)]
         elif isinstance(payload, dict):
@@ -352,36 +362,75 @@ def ingest():
         else:
             objs = [_normalize_one({"raw": str(payload)})]
 
-        # Single transaction for the batch
-        conn = get_db_connection()
-        cur = conn.cursor()
+        # Default the "port" column to a placeholder so the NOT NULL constraint
+        # is never violated by malformed clients.
         for obj in objs:
-            cur.execute("""
-                INSERT INTO port_logs (port, timestamp, type, length, data_hex, data_text, ts_received)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
-            """, (
-                obj.get("port"),
-                obj.get("timestamp"),
-                obj.get("type"),
-                obj.get("length"),
-                obj.get("data_hex"),
-                obj.get("data_text"),
-                obj.get("ts_received")
-            ))
-            # Also keep in memory for "Live Feed" if UI is open and polling
-            with events_lock:
+            if not obj.get("port"):
+                obj["port"] = "<unknown>"
+
+        # Single transaction for the batch — `with conn` commits on success and
+        # rolls back on exception.
+        conn = get_db_connection()
+        with conn:
+            with conn.cursor() as cur:
+                for obj in objs:
+                    cur.execute("""
+                        INSERT INTO port_logs (port, timestamp, type, length, data_hex, data_text, ts_received)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    """, (
+                        obj.get("port"),
+                        obj.get("timestamp"),
+                        obj.get("type"),
+                        obj.get("length"),
+                        obj.get("data_hex"),
+                        obj.get("data_text"),
+                        obj.get("ts_received"),
+                    ))
+
+        # Mirror to the in-memory ring AFTER the DB commit so a failed insert
+        # never leaves the buffer ahead of the persisted state.
+        with events_lock:
+            for obj in objs:
                 events.append(obj)
-        
-        conn.commit()
-        cur.close()
-        conn.close()
-        
+
         return "OK", 200
     except Exception as e:
         app.logger.error("Error in /ingest endpoint: %s", e)
-        return f"ERR: {e}", 400
+        # Do not echo the exception text — it can leak DB schema details.
+        return "ERR", 400
+    finally:
+        if conn is not None:
+            conn.close()
+
+def _retention_sweeper():
+    # Periodically trim the table to RETENTION_MAX_ROWS so it cannot grow
+    # without bound. Runs in a daemon thread so it dies with the process.
+    while True:
+        time.sleep(300)
+        conn = None
+        try:
+            conn = get_db_connection()
+            with conn:
+                with conn.cursor() as cur:
+                    cur.execute("""
+                        DELETE FROM port_logs
+                        WHERE id IN (
+                            SELECT id FROM port_logs
+                            ORDER BY ts_received DESC
+                            OFFSET %s
+                        )
+                    """, (RETENTION_MAX_ROWS,))
+        except Exception as e:
+            app.logger.error("Retention sweep failed: %s", e)
+        finally:
+            if conn is not None:
+                conn.close()
+
 
 if __name__ == "__main__":
-  # Bind to 0.0.0.0 to allow incoming connections from the target Windows machine.
-  # Note: The /ingest endpoint has no authentication; use a firewall or proxy in production.
-  app.run(host="0.0.0.0", port=8005, debug=False)
+  # Bind to localhost by default. Set PORTSNIFFER_BIND=0.0.0.0 explicitly to
+  # accept connections from the target Windows machine, and put the service
+  # behind a firewall or reverse proxy because /ingest has no authentication.
+  threading.Thread(target=_retention_sweeper, daemon=True).start()
+  bind_host = os.environ.get("PORTSNIFFER_BIND", "127.0.0.1")
+  app.run(host=bind_host, port=8005, debug=False)
