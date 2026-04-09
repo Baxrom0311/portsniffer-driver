@@ -777,30 +777,49 @@ PortSnifferFilterEvtDeviceAdd(
         goto Cleanup;
     }
 
+    WDFKEY hardwareKey = WDF_NO_HANDLE;
+    UNICODE_STRING subkeyName;
+
     // Query the port name and store it in our context.
-    status = WdfDeviceOpenRegistryKey(device, PLUGPLAY_REGKEY_DEVICE, KEY_READ, WDF_NO_OBJECT_ATTRIBUTES, &regKey);
+    status = WdfDeviceOpenRegistryKey(device, PLUGPLAY_REGKEY_DEVICE, KEY_READ, WDF_NO_OBJECT_ATTRIBUTES, &hardwareKey);
     if (!NT_SUCCESS(status))
     {
         KdPrint(("WdfDeviceOpenRegistryKey failed, status = 0x%08lX\n", status));
         goto Cleanup;
     }
 
+    // Allocate the string to hold the value.
     WDF_OBJECT_ATTRIBUTES_INIT(&portNameValueDataAttributes);
     portNameValueDataAttributes.ParentObject = device;
     status = WdfStringCreate(NULL, &portNameValueDataAttributes, &portNameValueData);
     if (!NT_SUCCESS(status))
     {
         KdPrint(("WdfStringCreate failed, status = 0x%08lX\n", status));
+        // Need to close hardwareKey if we fail here, but let Cleanup handle it if we add a cleanup branch, or we can just close it later.
         goto Cleanup;
     }
 
-    // Try to get "PortName" first.
-    status = WdfRegistryQueryString(regKey, &portNameValueName, portNameValueData);
+    // Try to open the "Device Parameters" subkey where PortName is usually located.
+    RtlInitUnicodeString(&subkeyName, L"Device Parameters");
+    status = WdfRegistryOpenKey(hardwareKey, &subkeyName, KEY_READ, WDF_NO_OBJECT_ATTRIBUTES, &regKey);
+    if (NT_SUCCESS(status))
+    {
+        // We successfully opened "Device Parameters". Try to read "PortName".
+        status = WdfRegistryQueryString(regKey, &portNameValueName, portNameValueData);
+        WdfRegistryClose(regKey);
+    }
+
     if (!NT_SUCCESS(status))
     {
-        // Fallback to "FriendlyName" if "PortName" is not found.
+        // Fallback to "FriendlyName" from the root hardware key if "PortName" is not found or "Device Parameters" couldn't be opened.
         DECLARE_CONST_UNICODE_STRING(friendlyNameValueName, L"FriendlyName");
-        status = WdfRegistryQueryString(regKey, &friendlyNameValueName, portNameValueData);
+        status = WdfRegistryQueryString(hardwareKey, &friendlyNameValueName, portNameValueData);
+    }
+    
+    // Always close the hardwareKey.
+    if (hardwareKey)
+    {
+        WdfRegistryClose(hardwareKey);
     }
 
     if (!NT_SUCCESS(status))

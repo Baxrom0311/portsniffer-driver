@@ -7,7 +7,7 @@
 
 #include "PortSniffer-Tool.h"
 
-static const WCHAR _wszFilterName[] = L"EnlyzePortSniffer";
+static const WCHAR _wszFilterName[] = L"EnlyzePortSniffer2";
 #define CCH_FILTER_NAME (sizeof(_wszFilterName) / sizeof(WCHAR) - 1)
 
 
